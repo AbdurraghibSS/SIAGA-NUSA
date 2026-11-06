@@ -41,7 +41,7 @@
 | Komponen · *Component* | Fungsi · *Purpose* |
 |---|---|
 | 🌦️ **Weather Monitoring & Change Tracking** | Memantau prakiraan kota pilot dan menunjukkan apa yang berubah dibanding pembaruan sebelumnya.<br>*Monitors forecasts for pilot cities and shows what changed since the previous update.* |
-| 🌧️ **Model A — Heavy Rainfall Prediction** | Memprediksi peluang akumulasi hujan **24 jam** ke depan melewati ambang hujan lebat.<br>*Predicts the probability that rainfall over the next **24 hours** exceeds the heavy-rain threshold.* |
+| 🌧️ **Model A — Rainfall Prediction** | Memprediksi peluang hujan **sedang–lebat (≥20 mm/hari)** esok hari, mengikuti kategori intensitas hujan BMKG.<br>*Predicts the probability of **moderate-to-heavy rain (≥20 mm/day)** tomorrow, following BMKG's rainfall intensity categories.* |
 | 🌊 **Model B — Flood Occurrence Prediction** | Memprediksi peluang banjir per kecamatan Jabodetabek pada H+1, **bila lolos uji kelayakan data** di minggu ke-2.<br>*Predicts the probability of flooding per Jabodetabek district on the next day, **if it passes the data go/no-go gate** in week 2.* |
 | 🤖 **SIAGA NUSA AI Agent** | Agen Gemini yang memilih tool sendiri, menjawab langsung, atau menolak, tanpa pernah mengarang angka.<br>*A Gemini agent that picks its own tools, answers directly, or declines, without ever inventing numbers.* |
 | 🖥️ **Antarmuka · *Interface*** | Dasbor dan chat Streamlit.<br>*Streamlit dashboard and chat.* |
@@ -60,7 +60,7 @@
 
 | Inti · *Core* | Tambahan, setelah live · *Extra, after go-live* |
 |---|---|
-| 🌦️ Prakiraan & perubahan prakiraan 8 kota pilot · *Forecasts & forecast changes for 8 pilot cities*<br>🌧️ Prediksi hujan lebat · *Heavy-rain prediction*<br>🌊 Laporan banjir warga + debit sungai Jabodetabek · *Citizen flood reports + river discharge in Jabodetabek* | 📉 Anomali hujan · *Rainfall anomalies*<br>🟢 Peringatan dini cuaca BMKG · *BMKG weather warnings*<br>📝 Ringkasan harian · *Daily summary* |
+| 🌦️ Prakiraan & perubahan prakiraan 8 kota pilot · *Forecasts & forecast changes for 8 pilot cities*<br>🌧️ Prediksi hujan sedang–lebat · *Moderate-to-heavy rain prediction*<br>🌊 Laporan banjir warga + debit sungai Jabodetabek · *Citizen flood reports + river discharge in Jabodetabek* | 📉 Anomali hujan · *Rainfall anomalies*<br>🟢 Peringatan dini cuaca BMKG · *BMKG weather warnings*<br>📝 Ringkasan harian · *Daily summary* |
 
 **Kota pilot · *Pilot cities*:** Jakarta, Bogor, Bandung, Semarang, Yogyakarta, Surabaya, Medan, Makassar ([`pipeline/locations.py`](pipeline/locations.py)).
 

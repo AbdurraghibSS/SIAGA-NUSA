@@ -38,3 +38,23 @@ def split(payload: dict | list, locations: tuple[Location, ...]) -> list[dict]:
     if len(items) != len(locations):
         raise ValueError(f"expected {len(locations)} locations, got {len(items)}")
     return items
+
+
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+
+
+def fetch_daily_archive(session, locations: tuple[Location, ...], start: str, end: str,
+                        daily: tuple[str, ...] = ("precipitation_sum",), model: str = "era5") -> list[dict]:
+    """Data historis harian (WIB) per lokasi, urutan sama dengan `locations`."""
+    params = {
+        "latitude": ",".join(str(loc.lat) for loc in locations),
+        "longitude": ",".join(str(loc.lon) for loc in locations),
+        "start_date": start,
+        "end_date": end,
+        "daily": ",".join(daily),
+        "timezone": "Asia/Jakarta",
+        "models": model,
+    }
+    resp = session.get(ARCHIVE_URL, params=params, timeout=300)
+    resp.raise_for_status()
+    return split(resp.json(), locations)
