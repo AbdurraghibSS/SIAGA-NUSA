@@ -1,0 +1,58 @@
+# Arsip snapshot prakiraan BMKG + Open-Meteo ke branch `data-snapshots`.
+# Sementara sampai pipeline berjalan di Azure VM; arsip ini nanti di-backfill ke Postgres.
+name: Snapshot prakiraan
+
+on:
+  schedule:
+    # Setiap 3 jam (UTC). Respons BMKG di-cache CDN 1 jam, BMKG terbit ±2× sehari.
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install .
+
+      - name: Siapkan worktree data-snapshots
+        run: |
+          if git ls-remote --exit-code --heads origin data-snapshots >/dev/null; then
+            git fetch --depth=1 origin data-snapshots
+            git worktree add -B data-snapshots data FETCH_HEAD
+          else
+            git worktree add --orphan -b data-snapshots data
+          fi
+
+      - name: Ambil snapshot dan commit
+        run: |
+          set +e
+          python -m pipeline.ingest.snapshot --out data/snapshots
+          status=$?
+          set -e
+
+          cd data
+          git add snapshots
+          if git diff --cached --quiet; then
+            echo "Tidak ada snapshot baru"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -q -m "snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push origin data-snapshots
+          fi
+          # Run tetap merah kalau ada sumber yang gagal, tapi snapshot yang berhasil sudah tersimpan.
+          exit $status
