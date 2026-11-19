@@ -7,11 +7,13 @@ dilakukan belakangan oleh pipeline, dari arsip ini.
     python -m pipeline.ingest.snapshot --out snapshots
 
 Tata letak: <out>/<sumber>/<YYYY-MM-DD>/<HHMM>Z/<lokasi>.json (UTC)
-Exit code 1 kalau ada panggilan yang gagal; berkas yang berhasil tetap ditulis.
+Exit code 1 hanya kalau semua panggilan gagal. Kegagalan sebagian tetap dicatat
+di envelope dan dilaporkan (sebagai ::warning:: di GitHub Actions), tapi exit 0.
 """
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -24,6 +26,10 @@ from pipeline.ingest.http import TIMEOUT_S, make_session
 from pipeline.locations import PILOT_LOCATIONS, Location
 
 SOURCES = (bmkg.SOURCE, openmeteo.SOURCE)
+
+# Open-Meteo sesekali menggantung (ReadTimeout di semua retry urllib3, mis. 13 & 16 Nov 2026).
+# Satu panggilan ulang setelah jeda biasanya cukup supaya slot snapshot tidak bolong.
+OPENMETEO_RETRY_DELAY_S = 60.0
 
 
 def _utc_now() -> datetime:
@@ -74,9 +80,16 @@ def snapshot_bmkg(session, locations: tuple[Location, ...], delay_s: float = 1.0
     return envelopes
 
 
-def snapshot_openmeteo(session, locations: tuple[Location, ...]) -> list[dict]:
+def snapshot_openmeteo(
+    session, locations: tuple[Location, ...], retry_delay_s: float = OPENMETEO_RETRY_DELAY_S
+) -> list[dict]:
     params = openmeteo.params_for(locations)
     status, payload, error = _get(session, openmeteo.URL, params)
+    if status is None and retry_delay_s:
+        # Gagal di level jaringan (timeout/koneksi). 429/5xx sudah di-retry oleh sesi HTTP.
+        print(f"open-meteo: {error.split(':')[0]}, coba lagi dalam {retry_delay_s:.0f} s", file=sys.stderr)
+        time.sleep(retry_delay_s)
+        status, payload, error = _get(session, openmeteo.URL, params)
     fetched_at = _utc_now()
     # Kalau gagal, respons mentah (mis. {"error": true, "reason": ...}) disimpan di setiap lokasi.
     items = [payload] * len(locations)
@@ -131,7 +144,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{_iso(run_at)} wrote {len(envelopes)} snapshots, {len(failed)} failed")
     for e in failed:
         print(f"  FAIL {e['source']}/{e['location']}: {e['error']}", file=sys.stderr)
-    return 1 if failed else 0
+    if failed and os.environ.get("GITHUB_ACTIONS") == "true":
+        for source in sources:
+            n_fail = sum(e["source"] == source for e in failed)
+            if n_fail:
+                n_total = sum(e["source"] == source for e in envelopes)
+                print(f"::warning title=Snapshot {source}::{n_fail}/{n_total} lokasi gagal, lihat field error di envelope")
+    # Merah hanya kalau tidak ada yang berhasil sama sekali; sebagian gagal = warning saja.
+    return 1 if envelopes and len(failed) == len(envelopes) else 0
 
 
 if __name__ == "__main__":

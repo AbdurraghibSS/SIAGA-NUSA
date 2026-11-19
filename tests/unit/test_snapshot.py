@@ -90,3 +90,61 @@ def test_write_layout_and_never_overwrite(tmp_path):
 def test_main_rejects_unknown_source():
     with pytest.raises(SystemExit):
         snapshot.main(["--sources", "bmkg,usgs"])
+
+
+def test_openmeteo_retries_once_after_network_error(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(snapshot.time, "sleep", sleeps.append)
+    payload = [{"latitude": loc.lat} for loc in LOCS]
+    session = FakeSession([requests.ReadTimeout("hang"), FakeResponse(200, payload)])
+    envs = snapshot.snapshot_openmeteo(session, LOCS, retry_delay_s=5)
+    assert len(session.calls) == 2 and sleeps == [5]
+    assert all(e["error"] is None and e["status"] == 200 for e in envs)
+
+
+def test_openmeteo_gives_up_after_second_network_error(monkeypatch):
+    monkeypatch.setattr(snapshot.time, "sleep", lambda s: None)
+    session = FakeSession([requests.ReadTimeout("hang"), requests.ReadTimeout("hang again")])
+    envs = snapshot.snapshot_openmeteo(session, LOCS, retry_delay_s=5)
+    assert len(session.calls) == 2
+    assert all(e["status"] is None and "ReadTimeout" in e["error"] for e in envs)
+
+
+def test_openmeteo_http_error_is_not_retried_again():
+    # 429/5xx sudah di-retry oleh sesi HTTP; FakeSession akan IndexError kalau dipanggil dua kali.
+    session = FakeSession([FakeResponse(503, {"error": True})])
+    envs = snapshot.snapshot_openmeteo(session, LOCS, retry_delay_s=5)
+    assert len(session.calls) == 1 and envs[0]["error"] == "HTTP 503"
+
+
+def _fake_run(monkeypatch, tmp_path, bmkg_error, openmeteo_error):
+    def fake(source, error):
+        return lambda session, locs, *a, **k: [
+            snapshot._envelope(source, loc.slug, "u", {}, RUN_AT, None if error else 200, None, error)
+            for loc in LOCS
+        ]
+
+    monkeypatch.setattr(snapshot, "make_session", lambda: None)
+    monkeypatch.setattr(snapshot, "snapshot_bmkg", fake("bmkg", bmkg_error))
+    monkeypatch.setattr(snapshot, "snapshot_openmeteo", fake("open-meteo", openmeteo_error))
+    return snapshot.main(["--out", str(tmp_path)])
+
+
+def test_main_partial_failure_exits_zero_with_actions_warning(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert _fake_run(monkeypatch, tmp_path, None, "ReadTimeout: hang") == 0
+    out = capsys.readouterr().out
+    assert "::warning title=Snapshot open-meteo::2/2 lokasi gagal" in out
+    assert "Snapshot bmkg" not in out
+    assert len(list(tmp_path.rglob("*.json"))) == 2 * len(LOCS)
+
+
+def test_main_total_failure_exits_one(monkeypatch, tmp_path):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert _fake_run(monkeypatch, tmp_path, "ConnectionError: down", "ReadTimeout: hang") == 1
+
+
+def test_main_all_ok_exits_zero(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert _fake_run(monkeypatch, tmp_path, None, None) == 0
+    assert "::warning" not in capsys.readouterr().out

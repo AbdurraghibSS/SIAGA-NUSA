@@ -4,8 +4,10 @@ name: Snapshot prakiraan
 
 on:
   schedule:
-    # Setiap 3 jam (UTC). Respons BMKG di-cache CDN 1 jam, BMKG terbit ±2× sehari.
-    - cron: "17 */3 * * *"
+    # Dijadwalkan tiap jam (UTC). GitHub sering menunda/melewati cron: dengan */3 yang benar-benar
+    # jalan cuma ±3 run/hari (6–19 Nov 2026), jadi jadwal dirapatkan supaya cakupan harian cukup.
+    # Respons BMKG di-cache CDN 1 jam, BMKG terbit ±2× sehari; Open-Meteo 1 panggilan per run.
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -54,5 +56,6 @@ jobs:
             git commit -q -m "snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
             git push origin data-snapshots
           fi
-          # Run tetap merah kalau ada sumber yang gagal, tapi snapshot yang berhasil sudah tersimpan.
+          # Merah hanya kalau semua panggilan gagal; kegagalan sebagian muncul sebagai warning.
+          # Snapshot yang berhasil (dan envelope error-nya) tetap tersimpan.
           exit $status
