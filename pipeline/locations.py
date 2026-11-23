@@ -14,6 +14,12 @@ class Location:
     adm4: str  # kode kelurahan Kemendagri, dipakai API BMKG
     lat: float
     lon: float
+    tz: str = "Asia/Jakarta"  # zona waktu lokal untuk tampilan (Makassar = WITA)
+
+    @property
+    def city(self) -> str:
+        """Nama kota tanpa kelurahan, mis. "Jakarta"."""
+        return self.name.split(" (")[0]
 
 
 PILOT_LOCATIONS: tuple[Location, ...] = (
@@ -24,5 +30,5 @@ PILOT_LOCATIONS: tuple[Location, ...] = (
     Location("yogyakarta", "Yogyakarta (Kricak)", "34.71.01.1001", -7.7736, 110.3572),
     Location("surabaya", "Surabaya (Karang Pilang)", "35.78.01.1001", -7.3406, 112.6899),
     Location("medan", "Medan (Pasar Baru)", "12.71.01.1001", 3.5840, 98.6847),
-    Location("makassar", "Makassar (Bontorannu)", "73.71.01.1001", -5.1622, 119.4043),
+    Location("makassar", "Makassar (Bontorannu)", "73.71.01.1001", -5.1622, 119.4043, "Asia/Makassar"),
 )

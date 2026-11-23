@@ -44,7 +44,7 @@
 | 🌧️ **Model A — Rainfall Prediction** | Memprediksi peluang hujan **sedang–lebat (≥20 mm/hari)** esok hari, mengikuti kategori intensitas hujan BMKG.<br>*Predicts the probability of **moderate-to-heavy rain (≥20 mm/day)** tomorrow, following BMKG's rainfall intensity categories.* |
 | 🌊 **Model B — Flood Occurrence Prediction** | Memprediksi peluang banjir per kecamatan Jabodetabek pada H+1, **bila lolos uji kelayakan data** di minggu ke-2.<br>*Predicts the probability of flooding per Jabodetabek district on the next day, **if it passes the data go/no-go gate** in week 2.* |
 | 🤖 **SIAGA NUSA AI Agent** | Agen Gemini yang memilih tool sendiri, menjawab langsung, atau menolak, tanpa pernah mengarang angka.<br>*A Gemini agent that picks its own tools, answers directly, or declines, without ever inventing numbers.* |
-| 🖥️ **Antarmuka · *Interface*** | Dasbor dan chat Streamlit.<br>*Streamlit dashboard and chat.* |
+| 🖥️ **Antarmuka · *Interface*** | Dasbor web (HTML/JS) yang disajikan FastAPI: cuaca di atas "garis air", laporan banjir di bawahnya.<br>*Web dashboard (HTML/JS) served by FastAPI: weather above the "waterline", flood reports below it.* |
 
 ### 🏷️ Setiap informasi berlabel sumber · *Every answer is source-labelled*
 
@@ -76,7 +76,7 @@ Status siaga dan peringatan resmi **hanya** berasal dari data BMKG dan diputuska
 
 <div align="center">
 
-<img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"/> <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"/> <img src="https://img.shields.io/badge/Gemini%20API-8E75B2?style=for-the-badge&logo=googlegemini&logoColor=white" alt="Gemini API"/> <img src="https://img.shields.io/badge/PostgreSQL%20%2B%20PostGIS-336791?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL + PostGIS"/> <img src="https://img.shields.io/badge/Chroma-FF6446?style=for-the-badge" alt="Chroma"/> <img src="https://img.shields.io/badge/scikit--learn%20%2F%20XGBoost-F7931E?style=for-the-badge&logo=scikitlearn&logoColor=white" alt="scikit-learn / XGBoost"/> <img src="https://img.shields.io/badge/MLflow-0194E2?style=for-the-badge&logo=mlflow&logoColor=white" alt="MLflow"/> <img src="https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white" alt="Streamlit"/> <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"/> <img src="https://img.shields.io/badge/Azure%20VM-0078D4?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0id2hpdGUiIGQ9Ik01LjQ4MyAyMS4zSDI0TDE0LjAyNSA0LjAxM2wtMy4wMzggOC4zNDcgNS44MzYgNi45MzhMNS40ODMgMjEuM3pNMTMuMjMgMi43TDYuMTA1IDguNjc3IDAgMTkuMjUzaDUuNTA1di4wMTRMMTMuMjMgMi43eiIvPjwvc3ZnPg%3D%3D" alt="Azure VM"/>
+<img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"/> <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"/> <img src="https://img.shields.io/badge/Gemini%20API-8E75B2?style=for-the-badge&logo=googlegemini&logoColor=white" alt="Gemini API"/> <img src="https://img.shields.io/badge/PostgreSQL%20%2B%20PostGIS-336791?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL + PostGIS"/> <img src="https://img.shields.io/badge/Chroma-FF6446?style=for-the-badge" alt="Chroma"/> <img src="https://img.shields.io/badge/scikit--learn%20%2F%20XGBoost-F7931E?style=for-the-badge&logo=scikitlearn&logoColor=white" alt="scikit-learn / XGBoost"/> <img src="https://img.shields.io/badge/MLflow-0194E2?style=for-the-badge&logo=mlflow&logoColor=white" alt="MLflow"/> <img src="https://img.shields.io/badge/pandas-150458?style=for-the-badge&logo=pandas&logoColor=white" alt="pandas"/> <img src="https://img.shields.io/badge/SQLAlchemy-D71F00?style=for-the-badge&logo=sqlalchemy&logoColor=white" alt="SQLAlchemy"/> <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"/> <img src="https://img.shields.io/badge/Azure%20VM-0078D4?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0id2hpdGUiIGQ9Ik01LjQ4MyAyMS4zSDI0TDE0LjAyNSA0LjAxM2wtMy4wMzggOC4zNDcgNS44MzYgNi45MzhMNS40ODMgMjEuM3pNMTMuMjMgMi43TDYuMTA1IDguNjc3IDAgMTkuMjUzaDUuNTA1di4wMTRMMTMuMjMgMi43eiIvPjwvc3ZnPg%3D%3D" alt="Azure VM"/>
 
 </div>
 
@@ -90,20 +90,33 @@ Status siaga dan peringatan resmi **hanya** berasal dari data BMKG dan diputuska
 
 ## 🚀 Menjalankan · *Running*
 
-> Saat ini yang sudah berjalan baru ingestion snapshot prakiraan. Stack lengkap (`docker compose up`) menyusul.<br>
-> *Only forecast-snapshot ingestion runs so far. The full stack (`docker compose up`) is coming.*
-
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+cp .env.example .env
 pytest -q
 
-# Ambil satu snapshot BMKG + Open-Meteo · take one BMKG + Open-Meteo snapshot
-python -m pipeline.ingest.snapshot --out snapshots
+docker compose up -d db                    # PostgreSQL 16 + PostGIS di localhost:5434
+python -m pipeline.run all                 # sync snapshot → muat → bersihkan → view SQL
+uvicorn api.main:app --port 8010           # dasbor http://localhost:8010 · dokumentasi /docs
 ```
 
-Snapshot dikumpulkan otomatis setiap 3 jam oleh GitHub Actions ([`snapshot.yml`](.github/workflows/snapshot.yml)) ke branch [`data-snapshots`](https://github.com/AbdurraghibSS/SIAGA-NUSA/tree/data-snapshots), karena BMKG tidak menyediakan arsip prakiraan.<br>
-*Snapshots are collected automatically every 3 hours by GitHub Actions ([`snapshot.yml`](.github/workflows/snapshot.yml)) into the [`data-snapshots`](https://github.com/AbdurraghibSS/SIAGA-NUSA/tree/data-snapshots) branch, because BMKG keeps no forecast archive.*
+Snapshot prakiraan dikumpulkan otomatis setiap 3 jam oleh GitHub Actions ([`snapshot.yml`](.github/workflows/snapshot.yml)) ke branch [`data-snapshots`](https://github.com/AbdurraghibSS/SIAGA-NUSA/tree/data-snapshots), karena BMKG tidak menyediakan arsip prakiraan. `pipeline.run sync` mengambil branch itu.<br>
+*Forecast snapshots are collected every 3 hours by GitHub Actions into the `data-snapshots` branch, because BMKG keeps no forecast archive. `pipeline.run sync` pulls that branch.*
+
+### 🔁 Alur data · *Data flow*
+
+| Job | Pola · *Pattern* | Isi · *What it does* |
+|---|---|---|
+| `sync` | Extract | `git fetch` + `git archive` branch `data-snapshots` → `data/snapshots/` |
+| `raw` | ELT | Envelope JSON apa adanya → `raw_payloads` (`jsonb`), termasuk yang gagal · *Raw envelopes, failures included* |
+| `forecasts` | ETL (pandas) | Ratakan JSON, konversi tipe & zona waktu, buang duplikat terbitan BMKG, nilai di luar rentang → `quarantine`. Nilai kosong tidak diisi tebakan · *Flatten, cast, dedupe, quarantine out-of-range values; missing values are never imputed* |
+| `history` | ETL | Hujan harian ERA5 dari arsip + susul hari yang belum ada lewat API · *ERA5 daily backfill + incremental catch-up* |
+| `floods` | ETL | Arsip PetaBencana bulan berjalan ditarik ulang, laporan latihan/uji/ledakan ditandai · *Refresh current month, flag drill/test/burst reports* |
+| `views` | SQL | CTE, window function (`DENSE_RANK`, `SUM OVER`), `FILTER`, `CASE WHEN` di [`sql/views.sql`](sql/views.sql) |
+
+Semua job idempotent (`ON CONFLICT`), dan setiap eksekusi tercatat di `ingest_runs` untuk halaman Status.<br>
+*All jobs are idempotent (`ON CONFLICT`), and every run is logged in `ingest_runs` for the Status page.*
 
 ## 🚧 Status & Roadmap
 
@@ -112,10 +125,12 @@ Proyek ini sedang dikembangkan (30 Oktober – 23 Desember 2026).<br>
 
 - [x] Ide & perencanaan · *Idea & planning*
 - [x] Snapshot prakiraan BMKG + Open-Meteo terjadwal · *Scheduled BMKG + Open-Meteo forecast snapshots*
-- [ ] Backfill historis, pembersihan, skema Postgres + PostGIS · *Historical backfill, cleaning, Postgres + PostGIS schema*
+- [x] Backfill historis, pembersihan, skema Postgres + PostGIS · *Historical backfill, cleaning, Postgres + PostGIS schema*
+- [x] API FastAPI + dasbor web dengan data asli · *FastAPI + web dashboard on real data*
+- [ ] Debit sungai GloFAS + indeks risiko banjir · *GloFAS river discharge + flood risk index*
 - [ ] Model A (+ Model B bila lolos *gate*) dengan MLflow · *Model A (+ Model B if it passes the gate) with MLflow*
 - [ ] Agen Gemini + tools · *Gemini agent + tools*
-- [ ] Dasbor & chat Streamlit · *Streamlit dashboard & chat*
+- [ ] Chat agen & laporan situasi di dasbor · *Agent chat & situation report in the dashboard*
 - [ ] `docker compose up` + deploy Azure VM · *`docker compose up` + Azure VM deployment*
 - [ ] Uji keamanan prompt injection · *Prompt injection security testing*
 - [ ] Showcase — 23 Desember 2026

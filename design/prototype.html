@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}[hidden]{display:none!important}</style>
+<title>SIAGA NUSA</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;800;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* Layout concept: one scene. Above the waterline = the overcast sky (weather: drifting clouds, rain that hangs from the cloud base).
+   A live wave with raindrop ripples is the waterline. Below it = murky flood water (risk, map, citizen reports).
+   Deliberately single dark world; the situation report is the only light object (a printed sheet). */
+:root {
+  --sky: #17222B;
+  --cloud: #2A3B4A;
+  --water: #133634;
+  --ink: #E7EDF0;
+  --ink-2: #A8B8C1;
+  --ink-3: #6F8592;
+  --rain: #A9CDE4;
+  --mud: #C59C62;
+  --rule: rgba(231, 237, 240, .14);
+  --paper: #EDF1F2;
+  --paper-ink: #17222B;
+  --paper-muted: #4E6370;
+  --low: #8EBBAC;
+  --mid: #EAB24C;
+  --high: #F2735C;
+  --src-resmi: #7FCC98;
+  --src-model: #93C2F0;
+  --src-pred: #C5A9F3;
+  --src-warga: #EBCB5C;
+  --display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --text: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--water); color: var(--ink); }
+body { font-family: var(--text); font-size: 16px; line-height: 1.55; font-variant-numeric: tabular-nums; }
+h1, h2, h3 { font-family: var(--display); margin: 0; text-wrap: balance; letter-spacing: .005em; }
+p { margin: 0; }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--rain); outline-offset: 3px; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+.muted { color: var(--ink-2); }
+
+/* source tag: sentence case, colored dot */
+.tag { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.tag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--ink-3)); flex: none; }
+.tag b { color: var(--c); font-weight: 700; }
+.t-resmi { --c: var(--src-resmi); } .t-model { --c: var(--src-model); } .t-pred { --c: var(--src-pred); } .t-warga { --c: var(--src-warga); }
+
+/* ================= SKY ================= */
+.storm { position: relative; background: linear-gradient(180deg, var(--cloud) 0%, var(--sky) 42%, var(--sky) 100%); overflow: hidden; }
+.storm canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.storm > .wrap { position: relative; }
+.storm-inner { padding-block: 22px 120px; display: flex; flex-direction: column; gap: 34px; }
+.storm.short .storm-inner { padding-block: 22px 100px; gap: 26px; }
+
+.topbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 28px; }
+.brand { font-family: var(--display); font-weight: 900; font-size: 28px; letter-spacing: .04em; line-height: 1; text-decoration: none; }
+.brand small { display: block; font-family: var(--text); font-weight: 400; font-size: 12.5px; letter-spacing: 0; color: var(--ink-2); margin-top: 4px; }
+.nav { display: flex; flex-wrap: wrap; gap: 4px 26px; }
+.nav a { text-decoration: none; color: var(--ink-2); padding-block: 6px; border-bottom: 2px solid transparent; }
+.nav a:hover { color: var(--ink); }
+.nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--rain); }
+
+.cities { display: flex; flex-wrap: wrap; gap: 4px 22px; font-size: 15px; }
+.cities button { background: none; border: 0; padding: 4px 0; cursor: pointer; color: var(--ink-3); border-bottom: 1px solid transparent; }
+.cities button:hover { color: var(--ink-2); }
+.cities button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+
+.hero { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 32px 56px; align-items: end; }
+.when { color: var(--ink-2); font-size: 15px; margin-bottom: 10px; }
+.hero h1 { font-size: clamp(32px, 3.7vw, 54px); font-weight: 800; line-height: 1; max-width: 18ch; }
+.total { display: flex; flex-direction: column; gap: 14px; }
+.total-num { font-family: var(--display); font-weight: 900; font-size: clamp(72px, 9vw, 124px); line-height: .82; }
+.total-num span { font-size: .32em; font-weight: 700; color: var(--ink-2); margin-left: 6px; }
+.total-cap { color: var(--ink-2); font-size: 15px; }
+
+.scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; position: relative; }
+.scale i { height: 10px; display: block; background: var(--rain); }
+.scale-labels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; font-size: 12px; color: var(--ink-3); margin-top: 6px; }
+.scale-labels span b { display: block; color: var(--ink-2); font-weight: 700; }
+.scale .marker { position: absolute; top: -7px; width: 3px; height: 24px; background: var(--ink); transform: translateX(-1px); border-radius: 2px; transition: left .5s ease; }
+.prob { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; font-size: 15px; }
+.prob strong { font-family: var(--display); font-size: 30px; font-weight: 800; color: var(--src-pred); line-height: 1; }
+
+.curtain-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 20px; align-items: baseline; margin-bottom: 4px; }
+.curtain-head h2 { font-size: 26px; font-weight: 700; }
+.change { font-size: 15px; color: var(--ink); max-width: 70ch; }
+.change em { font-style: normal; color: var(--rain); }
+#curtain svg { width: 100%; height: auto; display: block; overflow: visible; }
+.readout { min-height: 22px; font-size: 14px; color: var(--ink-2); }
+.bmkg { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); border-top: 1px solid var(--rule); margin-top: 8px; }
+.bmkg div { padding: 10px 8px 0 0; font-size: 13.5px; line-height: 1.3; min-width: 0; }
+.bmkg span { display: block; color: var(--ink-3); font-size: 12.5px; }
+.bmkg b { font-weight: 400; }
+.bmkg b.wet { color: var(--rain); font-weight: 700; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; color: var(--ink-2); margin-top: 12px; align-items: center; }
+.key { display: inline-block; vertical-align: middle; margin-right: 7px; }
+
+.others { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 28px; }
+.city-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: baseline; padding: 12px 0; border: 0; border-top: 1px solid var(--rule); background: none; text-align: left; cursor: pointer; }
+.city-row:hover .cn { text-decoration: underline; text-underline-offset: 3px; }
+.city-row .cn { font-weight: 700; }
+.city-row .mm { font-family: var(--display); font-size: 26px; font-weight: 800; line-height: 1; }
+.city-row .mm small { font-size: 14px; font-weight: 700; color: var(--ink-3); margin-left: 2px; }
+.city-row .mini { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; position: relative; margin-top: 6px; }
+.city-row .mini i { height: 4px; background: var(--rain); }
+.city-row .mini .dot { position: absolute; top: -3px; width: 2px; height: 10px; background: var(--ink); }
+.city-row .sub { grid-column: 1 / -1; font-size: 13px; color: var(--ink-3); }
+.city-row[aria-pressed="true"] .cn { color: var(--rain); }
+.fresh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.fresh-label { color: var(--ink-2); margin-right: 4px; }
+.badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px 5px 9px; border-radius: 999px; background: rgba(231,237,240,.07); border: 1px solid var(--rule); color: var(--ink); white-space: nowrap; backdrop-filter: blur(2px); }
+.badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--d, var(--low)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--d, var(--low)) 22%, transparent); }
+.badge b { font-weight: 700; }
+.badge span { color: var(--ink-2); }
+.badge.stale { --d: var(--mid); }
+.badge.official { --d: var(--src-resmi); border-color: color-mix(in srgb, var(--src-resmi) 40%, transparent); }
+
+.page-title h1 { font-size: clamp(40px, 5vw, 68px); font-weight: 800; line-height: .95; }
+.page-title p { color: var(--ink-2); margin-top: 12px; max-width: 60ch; }
+
+/* ================= WATER ================= */
+.below { padding-block: 10px 56px; display: flex; flex-direction: column; gap: 52px; }
+.flood-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 40px; align-items: end; }
+.flood-head h2 { font-size: clamp(36px, 4.4vw, 60px); font-weight: 800; line-height: .95; }
+.flood-head p { color: var(--ink-2); margin-top: 10px; max-width: 62ch; }
+.count { display: flex; flex-wrap: wrap; gap: 14px 28px; }
+.count div { display: flex; flex-direction: column; }
+.count strong { font-family: var(--display); font-size: 64px; font-weight: 900; line-height: .9; color: var(--lv, var(--src-warga)); }
+.count span { font-size: 13.5px; color: var(--ink-2); }
+
+.flood-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px 56px; align-items: start; }
+.map svg { width: 100%; height: auto; display: block; }
+.map .cell { cursor: crosshair; }
+.map .cell:hover { stroke: var(--ink); stroke-width: 2; }
+.map-note { font-size: 13.5px; color: var(--ink-2); margin-top: 12px; max-width: 60ch; }
+
+.ranking-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; padding-bottom: 10px; }
+.ranking-head h3 { font-size: 24px; font-weight: 700; }
+.rk { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; padding: 14px 0; border-top: 1px solid var(--rule); }
+.rk .sc { font-family: var(--display); font-size: 44px; font-weight: 900; line-height: .9; color: var(--lv); }
+.rk .nm { font-weight: 700; font-size: 17px; }
+.rk .nm small { display: block; font-weight: 400; font-size: 13px; color: var(--ink-3); }
+.rk .lv { font-size: 13.5px; font-weight: 700; color: var(--lv); text-align: right; }
+.rk .lv small { display: block; font-weight: 400; color: var(--ink-3); }
+.rk .bar { grid-column: 2 / -1; display: flex; height: 6px; background: rgba(231,237,240,.07); }
+.rk .bar i { height: 100%; display: block; }
+.lv-low { --lv: var(--low); } .lv-mid { --lv: var(--mid); } .lv-high { --lv: var(--high); }
+.c1 { background: var(--rain); } .c2 { background: color-mix(in srgb, var(--rain) 50%, var(--water)); } .c3 { background: var(--mud); } .c4 { background: color-mix(in srgb, var(--mud) 50%, var(--water)); }
+.sw { display: inline-block; width: 14px; height: 8px; margin-right: 7px; vertical-align: middle; }
+.formula { font-size: 13px; color: var(--ink-3); margin-top: 12px; }
+
+.feed-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 4px; }
+.feed-head h3 { font-size: 24px; font-weight: 700; }
+.feed { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 32px; }
+.feed div { padding: 12px 0; border-top: 1px solid var(--rule); font-size: 14.5px; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; }
+.feed time { color: var(--src-warga); font-weight: 700; font-size: 13.5px; }
+.feed small { display: block; color: var(--ink-3); font-size: 12.5px; }
+
+.tip { position: absolute; z-index: 5; pointer-events: none; background: var(--ink); color: var(--sky); font-size: 13px; padding: 8px 11px; border-radius: 4px; max-width: 250px; line-height: 1.4; }
+
+/* ================= TANYA ================= */
+.chat { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 40px 64px; align-items: start; }
+.thread { display: flex; flex-direction: column; gap: 34px; }
+.q { align-self: flex-end; max-width: 70%; font-size: 17px; background: rgba(231,237,240,.08); padding: 12px 16px; border-radius: 14px 14px 3px 14px; }
+.a { display: flex; flex-direction: column; gap: 14px; max-width: 70ch; }
+.a .who { font-size: 13px; color: var(--ink-3); }
+.a p { font-size: 17px; }
+.fact { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding-left: 16px; border-left: 2px solid var(--c); font-size: 15px; }
+.decline { padding-left: 16px; border-left: 2px solid var(--high); }
+details.steps summary { cursor: pointer; color: var(--rain); font-size: 14.5px; }
+.steps ol { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.steps li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 8px 0; border-top: 1px solid var(--rule); font-size: 13.5px; }
+.steps code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 12.5px; color: var(--ink-2); word-break: break-word; }
+.steps li span { color: var(--ink-3); }
+.ask { display: flex; gap: 10px; border-top: 1px solid var(--rule); padding-top: 22px; }
+.ask input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: rgba(231,237,240,.06); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; }
+.btn { background: var(--ink); color: var(--sky); border: 0; border-radius: 8px; padding: 12px 18px; font-weight: 700; cursor: pointer; }
+.btn:hover { background: var(--rain); }
+.btn.line { background: none; color: var(--ink); border: 1px solid var(--rule); }
+.btn.line:hover { border-color: var(--ink-2); background: none; }
+.side { display: flex; flex-direction: column; gap: 10px; font-size: 14.5px; color: var(--ink-2); }
+.side h3 { font-size: 22px; color: var(--ink); font-weight: 700; }
+.side button { text-align: left; background: none; border: 0; border-top: 1px solid var(--rule); padding: 10px 0; color: var(--ink); cursor: pointer; }
+.side button:hover { color: var(--rain); }
+
+/* ================= LAPORAN ================= */
+.report-bar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.sheet { background: var(--paper); color: var(--paper-ink); max-width: 780px; padding: 44px clamp(22px, 5vw, 60px) 40px; border-radius: 2px; box-shadow: 0 24px 60px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 16px; transition: opacity .3s; }
+.sheet .dateline { font-size: 13.5px; color: var(--paper-muted); }
+.sheet h2 { font-size: 40px; font-weight: 800; line-height: 1; }
+.sheet h3 { font-size: 22px; font-weight: 700; margin-top: 10px; }
+.sheet p, .sheet li { max-width: 66ch; font-size: 16px; }
+.sheet ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.sheet .src { font-size: 12.5px; color: var(--paper-muted); white-space: nowrap; }
+.sheet .fine { font-size: 13px; color: var(--paper-muted); border-top: 1px solid color-mix(in srgb, var(--paper-muted) 30%, var(--paper)); padding-top: 14px; }
+
+/* ================= STATUS ================= */
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th { text-align: left; font-weight: 400; color: var(--ink-3); font-size: 13.5px; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+td { padding: 13px 14px 13px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+td.r, th.r { text-align: right; }
+.state { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 9px; background: var(--s); }
+.st-ok { --s: var(--low); } .st-warn { --s: var(--mid); }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px 56px; }
+.two h3, .h3 { font-size: 26px; font-weight: 700; margin-bottom: 14px; }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.metrics strong { display: block; font-family: var(--display); font-size: 40px; font-weight: 800; line-height: 1; }
+.metrics span { font-size: 13px; color: var(--ink-2); }
+.gate { list-style: none; margin: 0; padding: 0; }
+.gate li { padding: 10px 0; border-top: 1px solid var(--rule); display: grid; grid-template-columns: 28px 1fr; }
+.states { display: flex; flex-direction: column; gap: 12px; }
+.banner { background: color-mix(in srgb, var(--mid) 16%, var(--water)); border-left: 3px solid var(--mid); padding: 12px 16px; font-size: 15px; }
+.empty { border: 1px dashed var(--rule); padding: 12px 16px; font-size: 15px; color: var(--ink-2); }
+
+footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size: 13px; color: var(--ink-3); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; }
+
+@media (max-width: 1000px) {
+  .hero, .flood-grid, .chat, .two { grid-template-columns: minmax(0, 1fr); }
+  .others { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .feed { grid-template-columns: minmax(0, 1fr); }
+  .flood-head { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .bmkg { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 8px; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .others { gap: 0 18px; }
+  .q { max-width: 90%; }
+  .count strong { font-size: 52px; }
+  .scale-labels { font-size: 10.5px; }
+}
+</style>
+
+<header class="storm" id="storm">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <div class="storm-inner">
+      <div class="topbar">
+        <a class="brand" href="#dasbor">SIAGA NUSA<small>Cuaca dan risiko banjir, dijawab dari data</small></a>
+        <nav class="nav" aria-label="Menu utama">
+          <a href="#dasbor" data-view="dasbor">Dasbor</a>
+          <a href="#tanya" data-view="tanya">Tanya</a>
+          <a href="#laporan" data-view="laporan">Laporan</a>
+          <a href="#status" data-view="status">Status</a>
+        </nav>
+      </div>
+
+      <!-- sky content: dasbor -->
+      <div data-sky="dasbor" style="display:flex; flex-direction:column; gap:40px">
+        <div style="display:flex; flex-direction:column; gap:16px">
+          <div class="cities" id="cityTabs" role="group" aria-label="Pilih kota"></div>
+          <div class="fresh" aria-label="Kesegaran data">
+            <span class="fresh-label">Data terakhir masuk</span>
+            <span class="badge"><b>BMKG</b><span>13.04 · 1 jam lalu</span></span>
+            <span class="badge"><b>Open-Meteo</b><span>14.02 · 18 menit lalu</span></span>
+            <span class="badge stale" title="1 dari 11 titik sungai kosong"><b>GloFAS</b><span>06.10 · 10 dari 11 titik</span></span>
+            <span class="badge"><b>PetaBencana</b><span>14.15 · 5 menit lalu</span></span>
+            <span class="badge official"><b>Peringatan dini BMKG</b><span>tidak ada yang aktif</span></span>
+          </div>
+        </div>
+        <div class="hero">
+          <div>
+            <p class="when">Senin, 23 November 2026, 14.20 WIB</p>
+            <h1 id="headline">Jakarta diprakirakan hujan sedang mulai pukul 17.00, paling deras sekitar 19.00.</h1>
+          </div>
+          <div class="total">
+            <div class="total-num" id="totalNum">28,8<span>mm</span></div>
+            <p class="total-cap">perkiraan hujan 24 jam ke depan · <span class="tag t-model"><b>Open-Meteo</b> 14.02</span></p>
+            <div>
+              <div class="scale" id="scale"><i></i><i></i><i></i><i></i><i></i><span class="marker" id="marker"></span></div>
+              <div class="scale-labels"><span><b>Ringan</b>0,5–20</span><span><b>Sedang</b>20–50</span><span><b>Lebat</b>50–100</span><span><b>Sangat lebat</b>100–150</span><span><b>Ekstrem</b>&gt;150 mm</span></div>
+            </div>
+            <p class="prob"><strong id="probNum">64%</strong><span>peluang hujan ≥20 mm besok</span><span class="tag t-pred"><b>Prediksi SIAGA NUSA</b> Model A</span></p>
+          </div>
+        </div>
+
+        <div class="curtain">
+          <div class="curtain-head">
+            <h2 id="curtainTitle">Hujan per jam di Jakarta</h2>
+            <span class="tag t-model"><b>Open-Meteo</b> pembaruan 13.00</span>
+          </div>
+          <p class="change" id="change"></p>
+          <div class="readout" id="readout" aria-live="polite"></div>
+          <div id="curtain"></div>
+          <div class="legend">
+            <span><svg class="key" width="14" height="18" aria-hidden="true"><rect x="2" y="0" width="10" height="18" rx="5" fill="var(--rain)" opacity=".8"/></svg>Pembaruan 13.00</span>
+            <span><svg class="key" width="18" height="10" aria-hidden="true"><line x1="0" y1="5" x2="18" y2="5" stroke="var(--ink)" stroke-width="2"/></svg>Pembaruan 07.00</span>
+            <span>Hujan menggantung dari awan: makin panjang, makin deras</span>
+          </div>
+          <div class="legend" style="margin-top:22px"><span class="tag t-resmi" id="bmkgTag"><b>Resmi</b> Prakiraan BMKG per 3 jam</span></div>
+          <div class="bmkg" id="bmkg"></div>
+        </div>
+
+        <div class="others" id="others"></div>
+      </div>
+
+      <!-- sky content: other pages -->
+      <div class="page-title" data-sky="tanya" hidden>
+        <h1>Tanya soal cuaca dan banjir</h1>
+        <p>Agen hanya menjawab dari data. Setiap angka diberi sumber dan waktunya, dan langkah yang diambil agen bisa dibuka.</p>
+      </div>
+      <div class="page-title" data-sky="laporan" hidden>
+        <h1>Laporan situasi hari ini</h1>
+        <p>Agen mengumpulkan data dari semua sumber lalu menuliskannya. Angka diambil dari tool, bukan ditulis bebas oleh model.</p>
+      </div>
+      <div class="page-title" data-sky="status" hidden>
+        <h1>Kesegaran data dan versi model</h1>
+        <p>Kapan tiap sumber terakhir masuk, berapa yang ditolak, dan model mana yang sedang dipakai.</p>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- ================= DASBOR (below the waterline) ================= -->
+  <section class="below" data-view-body="dasbor">
+    <div class="flood-head">
+      <div>
+        <h2>Risiko banjir besok di Jabodetabek</h2>
+        <p>Indeks gabungan hujan tiga hari, prakiraan 24 jam, debit sungai, dan riwayat laporan banjir. Ini perkiraan SIAGA NUSA, bukan status siaga resmi.</p>
+      </div>
+      <div class="count">
+        <div class="lv-high"><strong>3</strong><span>kecamatan Tinggi</span></div>
+        <div class="lv-mid"><strong>11</strong><span>kecamatan Sedang</span></div>
+        <div><strong>17</strong><span>laporan warga, 24 jam</span></div>
+      </div>
+    </div>
+
+    <div class="flood-grid">
+      <div>
+        <div class="map" id="map"></div>
+        <p class="map-note">Tiap kotak satu sel grid 0,05° (±5,5 km). Garis terang adalah Ciliwung dan Cisadane, titik kuning laporan warga 24 jam terakhir. <span class="tag t-pred"><b>Indeks v1</b> 14.10</span></p>
+      </div>
+      <div>
+        <div class="ranking-head"><h3>Kecamatan dengan skor tertinggi</h3><span class="tag t-pred"><b>Prediksi SIAGA NUSA</b></span></div>
+        <div id="rank"></div>
+        <div class="legend">
+          <span><i class="sw c1"></i>Hujan 3 hari</span>
+          <span><i class="sw c2"></i>Prakiraan 24 jam</span>
+          <span><i class="sw c3"></i>Debit sungai</span>
+          <span><i class="sw c4"></i>Riwayat banjir</span>
+        </div>
+        <p class="formula">Skor = 100 × (0,30 hujan 3 hari + 0,25 prakiraan 24 jam + 0,25 debit + 0,20 riwayat). Rendah di bawah 40, Sedang 40–69, Tinggi 70 ke atas. Istilah Waspada, Siaga, dan Awas tidak dipakai karena milik BMKG dan BPBD.</p>
+      </div>
+    </div>
+
+    <div>
+      <div class="feed-head"><h3>Laporan warga, 24 jam terakhir</h3><span class="tag t-warga"><b>PetaBencana</b> belum terverifikasi · 5 laporan latihan disaring</span></div>
+      <div class="feed" id="feed"></div>
+    </div>
+  </section>
+
+  <!-- ================= TANYA ================= -->
+  <section class="below" data-view-body="tanya" hidden>
+    <div class="chat">
+      <div class="thread">
+        <p class="q">Nanti malam Jakarta hujan lebat nggak? Kemarin Kemang banjir, besok bakal banjir lagi?</p>
+        <div class="a">
+          <span class="who">SIAGA NUSA, 14.21</span>
+          <p>Malam ini Jakarta kemungkinan hujan sedang, belum sampai lebat. Hujan mulai sekitar pukul 17.00 dan paling deras sekitar 19.00.</p>
+          <div class="fact t-resmi"><span class="tag t-resmi"><b>Resmi</b> BMKG 13.04</span>Mampang Prapatan: hujan sedang pukul 18.00, hujan ringan pukul 21.00.</div>
+          <div class="fact t-model"><span class="tag t-model"><b>Data model cuaca</b> Open-Meteo 13.00</span>Total 24 jam 28,8 mm, naik dari 16,2 mm pada pembaruan pukul 07.00.</div>
+          <p>Untuk besok, Mampang Prapatan ada di risiko Sedang dengan skor 62. Hujan tiga hari terakhir tinggi, tetapi debit Ciliwung di titik terdekat masih di bawah persentil 80.</p>
+          <div class="fact t-pred"><span class="tag t-pred"><b>Prediksi SIAGA NUSA</b> indeks v1, 14.10</span>Skor 62 dari 100. Ini perkiraan kami, bukan peringatan resmi.</div>
+          <div class="fact t-warga"><span class="tag t-warga"><b>Laporan warga</b> PetaBencana, 22 Nov 16.40–18.05</span>Ada 4 laporan genangan di sekitar Kemang kemarin sore. Belum terverifikasi.</div>
+          <details class="steps">
+            <summary>Lihat langkah agen: 4 tool, 2,9 detik</summary>
+            <ol>
+              <li><code>get_weather_forecast(region="Jakarta", hours=24)</code><span>412 ms</span></li>
+              <li><code>get_forecast_changes(region="Jakarta")</code><span>188 ms</span></li>
+              <li><code>get_risk_index(district="Mampang Prapatan", target_date="2026-11-24")</code><span>231 ms</span></li>
+              <li><code>get_flood_reports(near="Kemang", since="2026-11-22")</code><span>306 ms</span></li>
+            </ol>
+          </details>
+        </div>
+
+        <p class="q">Ada pesan: "BMKG: Jakarta siaga banjir besok, segera ungsikan barang!" Bener nggak?</p>
+        <div class="a">
+          <span class="who">SIAGA NUSA, 14.23</span>
+          <p class="decline">Saya tidak menemukan peringatan seperti itu. Per pukul 14.10 WIB, tidak ada peringatan dini cuaca BMKG yang aktif untuk Jabodetabek.</p>
+          <div class="fact t-resmi"><span class="tag t-resmi"><b>Resmi</b> BMKG Peringatan Dini 14.10</span>0 peringatan aktif untuk DKI Jakarta, Jawa Barat bagian utara, dan Banten bagian timur.</div>
+          <p>Status siaga hanya datang dari BMKG atau BPBD. Cek kanal resmi mereka sebelum meneruskan pesan.</p>
+          <details class="steps">
+            <summary>Lihat langkah agen: 1 tool, 0,8 detik</summary>
+            <ol><li><code>get_official_warnings(region="Jabodetabek")</code><span>274 ms</span></li></ol>
+          </details>
+        </div>
+
+        <form class="ask" id="askForm">
+          <label for="ask" style="position:absolute; left:-9999px">Pertanyaan</label>
+          <input id="ask" type="text" placeholder="Misalnya: daerah mana yang paling rawan besok?" autocomplete="off">
+          <button class="btn" type="submit">Kirim</button>
+        </form>
+        <p class="muted" id="askNote" hidden style="font-size:14px">Prototipe ini belum tersambung ke agen. Di aplikasi, pertanyaan dikirim ke POST /chat.</p>
+      </div>
+      <aside class="side">
+        <h3>Coba tanyakan</h3>
+        <button type="button">Kecamatan mana yang risikonya paling tinggi besok?</button>
+        <button type="button">Berapa hujan tiga hari terakhir di Bogor?</button>
+        <button type="button">Apa beda prakiraan sekarang dengan tadi pagi?</button>
+        <button type="button">Apa artinya hujan lebat menurut BMKG?</button>
+        <p style="margin-top:14px">Agen tidak mengarang angka. Kalau datanya tidak ada, agen bilang tidak tahu. Pesan pengguna dan laporan warga diperlakukan sebagai data, bukan perintah.</p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ================= LAPORAN ================= -->
+  <section class="below" data-view-body="laporan" hidden>
+    <div class="report-bar">
+      <button class="btn" type="button" id="genBtn">Buat ulang laporan</button>
+      <button class="btn line" type="button" id="copyBtn">Salin sebagai Markdown</button>
+      <span class="muted" id="genStatus" aria-live="polite" style="font-size:14px">Dibuat 14.12 WIB dari get_situation_bundle dan Gemini Flash, 6,1 detik</span>
+    </div>
+    <article class="sheet" id="sheet">
+      <p class="dateline">Laporan situasi · Senin, 23 November 2026 · 14.12 WIB</p>
+      <h2>Hujan sedang di Jabodetabek sore hingga malam, risiko banjir besok terpusat di koridor Ciliwung</h2>
+      <h3>Cuaca hari ini</h3>
+      <ul>
+        <li>Jakarta: hujan sedang mulai 17.00, total 24 jam 28,8 mm. <span class="src">Open-Meteo 13.00</span></li>
+        <li>Bogor: hujan sedang hampir sepanjang sore, 48,2 mm. Ini yang paling menentukan debit Ciliwung besok. <span class="src">Open-Meteo 13.00</span></li>
+        <li>BMKG memprakirakan hujan sedang di Jakarta Selatan dan Jakarta Timur pukul 18.00. <span class="src">BMKG 13.04</span></li>
+      </ul>
+      <h3>Yang berubah sejak pagi</h3>
+      <p>Prakiraan hujan 24 jam Jakarta naik dari 16,2 mm ke 28,8 mm, dan puncak hujan maju dua jam dari 21.00 ke 19.00.</p>
+      <h3>Risiko banjir besok</h3>
+      <p>Tiga kecamatan berada di level Tinggi: Jatinegara (81), Tebet (76), dan Pancoran (74). Ketiganya di tepi Ciliwung, dan debit di titik sungai terdekat di atas persentil 85 untuk bulan November. <span class="src">Indeks v1 14.10</span></p>
+      <h3>Laporan warga</h3>
+      <p>17 laporan dalam 24 jam terakhir, sebagian besar genangan 10–40 cm di Jakarta Timur dan Jakarta Selatan. 5 laporan lain disaring karena terdeteksi sebagai latihan atau uji coba. <span class="src">PetaBencana 14.15</span></p>
+      <h3>Peringatan resmi</h3>
+      <p>Tidak ada peringatan dini cuaca BMKG yang aktif untuk Jabodetabek. <span class="src">BMKG 14.10</span></p>
+      <p class="fine">SIAGA NUSA bukan sistem peringatan dini resmi. Saat cuaca ekstrem atau banjir, ikuti informasi BMKG dan BPBD setempat. Sumber: BMKG, Open-Meteo (CC BY 4.0), GloFAS, PetaBencana.id.</p>
+    </article>
+  </section>
+
+  <!-- ================= STATUS ================= -->
+  <section class="below" data-view-body="status" hidden>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Sumber</th><th>Jadwal</th><th>Terakhir masuk</th><th class="r">Diterima</th><th class="r">Ditolak</th><th>Catatan</th></tr></thead>
+        <tbody>
+          <tr><td><span class="state st-ok"></span>BMKG prakiraan</td><td>Tiap 3 jam</td><td>13.04</td><td class="r">8 dari 8 lokasi</td><td class="r">0</td><td class="muted">Snapshot lewat GitHub Actions</td></tr>
+          <tr><td><span class="state st-ok"></span>BMKG peringatan dini</td><td>15 menit</td><td>14.10</td><td class="r">0 aktif</td><td class="r">0</td><td class="muted">RSS/CAP</td></tr>
+          <tr><td><span class="state st-ok"></span>Open-Meteo prakiraan</td><td>Per jam</td><td>14.02</td><td class="r">8 dari 8 lokasi</td><td class="r">0</td><td></td></tr>
+          <tr><td><span class="state st-ok"></span>ERA5 harian</td><td>Harian</td><td>s.d. 18 Nov</td><td class="r">8 dari 8</td><td class="r">0</td><td class="muted">Tertinggal ±5 hari, normal</td></tr>
+          <tr><td><span class="state st-warn"></span>GloFAS debit sungai</td><td>Harian</td><td>06.10</td><td class="r">10 dari 11 titik</td><td class="r">1</td><td class="muted">Titik Cisadane Serpong kosong</td></tr>
+          <tr><td><span class="state st-ok"></span>PetaBencana</td><td>15 menit</td><td>14.15</td><td class="r">17</td><td class="r">5</td><td class="muted">Latihan #HKB dan kode uji disaring</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="two">
+      <div>
+        <h3>Model A: hujan ≥20 mm besok</h3>
+        <div class="metrics">
+          <div><strong>0,61</strong><span>PR-AUC uji</span></div>
+          <div><strong>0,44</strong><span>PR-AUC baseline</span></div>
+          <div><strong>0,14</strong><span>Brier score</span></div>
+          <div><strong>0,78</strong><span>Recall hari ≥50 mm</span></div>
+        </div>
+        <p class="muted" style="font-size:14px; margin-top:14px">Versi @champion v3 (XGBoost), dilatih 20 Nov 2026, uji Jan 2025–Okt 2026. Baseline: aturan "prakiraan sumber ≥20 mm".</p>
+      </div>
+      <div>
+        <h3>Model B: uji kelayakan data</h3>
+        <ul class="gate">
+          <li><span style="color:var(--low)">✓</span>Minimal 3 musim hujan dengan laporan</li>
+          <li><span style="color:var(--low)">✓</span>Minimal 300 sel-hari positif</li>
+          <li><span style="color:var(--mid)">…</span>Mengalahkan aturan ambang hujan, diuji minggu ke-3</li>
+        </ul>
+        <p class="muted" style="font-size:14px; margin-top:14px">Kalau gagal, indeks rule-based tetap dipakai dan hasilnya dilaporkan apa adanya.</p>
+      </div>
+    </div>
+    <div>
+      <h3 class="h3">Tampilan saat ada masalah</h3>
+      <div class="states">
+        <div class="banner"><b>Data BMKG terakhir masuk 14 jam lalu.</b> Prakiraan resmi yang tampil mungkin sudah tidak terbaru. Data model cuaca tetap diperbarui.</div>
+        <div class="empty">Debit sungai belum tersedia untuk titik ini, jadi komponen debit tidak dihitung dan skornya ditandai tidak lengkap.</div>
+        <div class="empty">Kuota agen hari ini habis. Jawaban memakai template dari data, tanpa ringkasan bahasa alami.</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Kelompok Blast Off · Final Project AI Engineer, Digital Skola × Microsoft Azure · Prototipe, semua angka contoh</span>
+    <span>Data: BMKG · Open-Meteo (CC BY 4.0) · GloFAS · PetaBencana.id · Bukan sistem peringatan dini resmi</span>
+  </footer>
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const fmt = (n, d = 1) => n.toFixed(d).replace('.', ',');
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const tip = $('#tip');
+  const showTip = (e, html) => { tip.innerHTML = html; tip.hidden = false; const maxX = window.scrollX + document.documentElement.clientWidth - tip.offsetWidth - 8; tip.style.left = Math.min(e.pageX + 14, maxX) + 'px'; tip.style.top = (e.pageY + 14) + 'px'; };
+  const hideTip = () => { tip.hidden = true; };
+  const shade = [.16, .32, .52, .74, .95];
+  document.querySelectorAll('.scale i').forEach((i, n) => { i.style.opacity = shade[n]; });
+
+  /* ---------- data (contoh) ---------- */
+  const cities = [
+    { name: 'Jakarta', mm: 28.8, p: 64, shift: 0, k: 1, area: 'Mampang Prapatan' },
+    { name: 'Bogor', mm: 48.2, p: 81, shift: -1, k: 1.65, area: 'Bogor Tengah' },
+    { name: 'Bandung', mm: 31.0, p: 58, shift: -2, k: 1.1, area: 'Coblong' },
+    { name: 'Semarang', mm: 9.4, p: 22, shift: 1, k: 0.35, area: 'Semarang Tengah' },
+    { name: 'Yogyakarta', mm: 17.6, p: 39, shift: -1, k: 0.62, area: 'Gondokusuman' },
+    { name: 'Surabaya', mm: 4.1, p: 11, shift: 2, k: 0.15, area: 'Genteng' },
+    { name: 'Medan', mm: 22.3, p: 47, shift: 3, k: 0.8, area: 'Medan Baru' },
+    { name: 'Makassar', mm: 61.5, p: 88, shift: 0, k: 2.1, area: 'Panakkukang' },
+  ];
+  const latestJkt = [0, 0.3, 1.8, 5.6, 7.4, 4.9, 3.0, 1.6, 0.9, 0.5, 0.3, 0.2, 0.1, 0, 0, 0, 0, 0, 0, 0.1, 0.2, 0.4, 0.6, 0.9];
+  const prevJkt   = [0, 0, 0.2, 0.8, 2.1, 3.6, 4.2, 2.4, 1.1, 0.4, 0.2, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0.1, 0.2, 0.3, 0.5];
+  const START = 15;
+  const hr = (i) => String((START + i + 24) % 24).padStart(2, '0') + '.00';
+  let sel = 0;
+  let intensity = 0.6; // drives rain density in the scene
+
+  const category = (mm) => mm < 0.5 ? 'tidak hujan' : mm < 20 ? 'hujan ringan' : mm < 50 ? 'hujan sedang' : mm < 100 ? 'hujan lebat' : mm < 150 ? 'hujan sangat lebat' : 'hujan ekstrem';
+  const cap = (s) => s[0].toUpperCase() + s.slice(1);
+  const bounds = [0.5, 20, 50, 100, 150, 250];
+  const scalePos = (mm) => { if (mm < 0.5) return 0; for (let i = 0; i < 5; i++) if (mm < bounds[i + 1]) return (i + (mm - bounds[i]) / (bounds[i + 1] - bounds[i])) / 5; return 1; };
+  const total = (a) => a.reduce((p, v) => p + v, 0);
+  function series(c) {
+    const rot = (a, s) => a.map((_, i) => a[(i - s + a.length) % a.length]);
+    const raw = rot(latestJkt, c.shift).map((v) => v * c.k);
+    const sum = total(raw);
+    const lat = raw.map((v) => +(v * c.mm / sum).toFixed(1));
+    const prev = rot(prevJkt, c.shift).map((v) => +(v * c.k).toFixed(1));
+    return { lat, prev };
+  }
+
+  /* ---------- sky: headline, total, scale ---------- */
+  function renderSky() {
+    const c = cities[sel], { lat, prev } = series(c);
+    const start = lat.findIndex((v) => v >= 0.5), pk = lat.indexOf(Math.max(...lat));
+    const cat = category(c.mm);
+    let h;
+    if (start < 0) h = `${c.name} diprakirakan hanya gerimis tipis dalam 24 jam ke depan.`;
+    else if (c.mm < 20) h = `${c.name} diprakirakan ${cat} sesekali, paling deras sekitar ${hr(pk)}.`;
+    else h = `${c.name} diprakirakan ${cat} mulai pukul ${hr(start)}, paling deras sekitar ${hr(pk)}.`;
+    $('#headline').textContent = h;
+    $('#totalNum').innerHTML = `${fmt(c.mm)}<span>mm</span>`;
+    $('#marker').style.left = (scalePos(c.mm) * 100) + '%';
+    $('#probNum').textContent = c.p + '%';
+    $('#curtainTitle').textContent = 'Hujan per jam di ' + c.name;
+    const ppk = prev.indexOf(Math.max(...prev));
+    const dir = total(lat) >= total(prev) ? 'naik' : 'turun';
+    $('#change').innerHTML = `Dibanding pembaruan pukul 07.00, total 24 jam <em>${dir} dari ${fmt(total(prev))} ke ${fmt(total(lat))} mm</em>` +
+      (ppk !== pk ? `, dan puncaknya <em>${pk < ppk ? 'maju' : 'mundur'} dari ${hr(ppk)} ke ${hr(pk)}</em>.` : '.');
+    document.querySelectorAll('#cityTabs button').forEach((b, i) => b.setAttribute('aria-pressed', i === sel));
+    document.querySelectorAll('.city-row').forEach((b, i) => b.setAttribute('aria-pressed', i === sel));
+    const word = (mm3) => mm3 >= 6 ? ['Hujan sedang', 1] : mm3 >= 1 ? ['Hujan ringan', 1] : mm3 > 0.2 ? ['Berawan', 0] : ['Cerah berawan', 0];
+    let html = '';
+    for (let i = 0; i < 24; i += 3) { const [w, wet] = word(lat[i] + lat[i + 1] + lat[i + 2]); html += `<div><span>${hr(i)}</span><b class="${wet ? 'wet' : ''}">${w}</b></div>`; }
+    $('#bmkg').innerHTML = html;
+    $('#bmkgTag').innerHTML = `<b>Resmi</b> Prakiraan BMKG per 3 jam, ${c.area}, 13.04`;
+    intensity = Math.min(1.4, 0.15 + c.mm / 45);
+    drawCurtain(lat, prev);
+  }
+
+  /* ---------- rain curtain: bars hang from the cloud base ---------- */
+  function drawCurtain(lat, prev) {
+    const host = $('#curtain'); host.innerHTML = '';
+    const W = 960, H = 230, T = 34, B = 26;
+    const maxV = Math.max(6, Math.ceil(Math.max(...lat, ...prev) / 2) * 2);
+    const bw = W / 24;
+    const len = (v) => (v / maxV) * (H - T - B);
+    const s = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Hujan per jam, 24 jam ke depan' }, host);
+    const g = el('linearGradient', { id: 'drip', x1: 0, y1: 0, x2: 0, y2: 1 }, el('defs', {}, s));
+    el('stop', { offset: 0, 'stop-color': css('--rain'), 'stop-opacity': .95 }, g);
+    el('stop', { offset: 1, 'stop-color': css('--rain'), 'stop-opacity': .3 }, g);
+    for (let v = 2; v <= maxV; v += 2) {
+      el('line', { x1: 0, x2: W, y1: T + len(v), y2: T + len(v), stroke: css('--ink'), 'stroke-opacity': .07 }, s);
+      const t = el('text', { x: W, y: T + len(v) - 4, 'text-anchor': 'end', 'font-size': 12, fill: css('--ink-3') }, s); t.textContent = v + ' mm/jam';
+    }
+    el('line', { x1: 0, x2: W, y1: T, y2: T, stroke: css('--ink-2'), 'stroke-width': 1.5 }, s);
+    for (let i = 0; i < 24; i++) {
+      const x = i * bw;
+      if (i % 3 === 0) { const t = el('text', { x: x + 2, y: T - 12, 'font-size': 13, fill: css('--ink-2') }, s); t.textContent = hr(i); el('line', { x1: x + 1, x2: x + 1, y1: T - 6, y2: T, stroke: css('--ink-2') }, s); }
+      if (lat[i] > 0) el('rect', { x: x + bw * .22, y: T + 1, width: bw * .56, height: Math.max(2, len(lat[i])), fill: 'url(#drip)', rx: bw * .28 }, s);
+      if (prev[i] > 0) el('line', { x1: x + bw * .12, x2: x + bw * .88, y1: T + len(prev[i]), y2: T + len(prev[i]), stroke: css('--ink'), 'stroke-width': 2 }, s);
+    }
+    const pk = lat.indexOf(Math.max(...lat));
+    const pl = el('text', { x: pk * bw + bw / 2, y: T + len(lat[pk]) + 18, 'text-anchor': 'middle', 'font-size': 15, 'font-weight': 700, fill: css('--ink') }, s);
+    pl.textContent = fmt(lat[pk]) + ' mm';
+    const ro = $('#readout');
+    ro.textContent = 'Arahkan kursor ke batang untuk angka per jam.';
+    for (let i = 0; i < 24; i++) {
+      const r = el('rect', { x: i * bw, y: 0, width: bw, height: H, fill: 'transparent' }, s);
+      r.addEventListener('mouseenter', () => { ro.textContent = `${hr(i)} WIB: ${fmt(lat[i])} mm menurut pembaruan 13.00, sebelumnya ${fmt(prev[i])} mm`; r.setAttribute('fill', 'rgba(231,237,240,.05)'); });
+      r.addEventListener('mouseleave', () => r.setAttribute('fill', 'transparent'));
+    }
+  }
+
+  /* ---------- city controls ---------- */
+  $('#cityTabs').innerHTML = cities.map((c) => `<button type="button">${c.name}</button>`).join('');
+  $('#others').innerHTML = cities.map((c) => `<button type="button" class="city-row" aria-label="${c.name}, ${fmt(c.mm)} mm, ${category(c.mm)}">
+      <span class="cn">${c.name}</span><span class="mm">${fmt(c.mm)}<small>mm</small></span>
+      <span class="mini"><i></i><i></i><i></i><i></i><i></i><span class="dot" style="left:${scalePos(c.mm) * 100}%"></span></span>
+      <span class="sub">${cap(category(c.mm))} · ${c.p}% peluang ≥20 mm besok</span></button>`).join('');
+  document.querySelectorAll('.city-row .mini').forEach((m) => m.querySelectorAll('i').forEach((i, n) => { i.style.opacity = shade[n] * .5; }));
+  [['#cityTabs button'], ['.city-row']].forEach(([q]) => {
+    const list = [...document.querySelectorAll(q)];
+    list.forEach((b, i) => b.addEventListener('click', () => { sel = i; renderSky(); }));
+  });
+
+  /* ---------- risk map ---------- */
+  const mask = ['....##.....##.', '.############.', '##############', '##############', '##############', '##############', '.#############', '.############.', '..###########.', '..##########..', '...#########..', '...########...', '....######....', '.....####.....'];
+  const ciliwung = [[7.2, 13.6], [6.7, 11], [7.3, 8.5], [6.8, 6], [7.4, 3.5], [7.0, 1.6], [7.3, 0.2]];
+  const cisadane = [[4.6, 13.2], [3.6, 10.5], [3.0, 7.5], [2.4, 4.5], [2.2, 1.6], [1.7, 0.4]];
+  const riverX = (pts, r) => { for (let i = 0; i < pts.length - 1; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[i + 1]; if (r <= y1 && r >= y2) return x1 + (x2 - x1) * ((r - y1) / (y2 - y1)); } return pts[pts.length - 1][0]; };
+  const noise = (c, r) => { const s = Math.sin(c * 12.9898 + r * 78.233) * 43758.5453; return s - Math.floor(s); };
+  const level = (s) => s >= 70 ? 'high' : s >= 40 ? 'mid' : 'low';
+  const lvName = { low: 'Rendah', mid: 'Sedang', high: 'Tinggi' };
+  const cells = [];
+  mask.forEach((row, r) => [...row].forEach((ch, c) => {
+    if (ch !== '#') return;
+    const d1 = Math.abs(c + .5 - riverX(ciliwung, r + .5)), d2 = Math.abs(c + .5 - riverX(cisadane, r + .5));
+    let s = 12 + 30 * (1 - r / 13) + 42 * Math.exp(-((d1 / 1.25) ** 2)) + 14 * Math.exp(-((d2 / 1.1) ** 2)) + (noise(c, r) - .5) * 12;
+    s = Math.round(Math.max(4, Math.min(96, s)));
+    cells.push({ c, r, s, lat: -(6.05 + r * .05 + .025), lon: 106.45 + c * .05 + .025 });
+  }));
+  const reports = [
+    [7.6, 4.4, '13.40', 'Genangan 40 cm', 'Kampung Melayu, Jatinegara'], [7.1, 4.9, '12.55', 'Air masuk halaman rumah, ±20 cm', 'Bukit Duri, Tebet'],
+    [6.6, 5.6, '11.20', 'Jalan tergenang, motor masih bisa lewat', 'Pancoran'], [8.2, 3.1, '10.05', 'Genangan 15 cm dekat stasiun', 'Jatinegara'],
+    [5.4, 2.6, '09.30', 'Saluran meluap di depan sekolah', 'Grogol Petamburan'], [7.4, 2.0, '08.50', 'Genangan setinggi mata kaki', 'Senen'],
+    [9.6, 3.6, '07.15', 'Air naik di gang, ±30 cm', 'Cakung'], [6.9, 6.8, '06.40', 'Genangan di underpass', 'Pasar Minggu'],
+    [3.1, 3.9, '05.10', 'Genangan 10 cm', 'Kembangan'],
+  ];
+  const places = [[7.5, 1.35, 'Jakarta Utara'], [8.0, 3.8, 'Jakarta'], [2.2, 3.2, 'Tangerang'], [11.4, 3.6, 'Bekasi'], [7.0, 8.2, 'Depok'], [7.2, 12.4, 'Bogor']];
+  function drawMap() {
+    const host = $('#map'); host.innerHTML = '';
+    const cs = 32, gap = 3, W = 14 * cs, H = 14 * cs;
+    const s = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Peta grid indeks risiko banjir Jabodetabek' }, host);
+    const t0 = el('text', { x: 6, y: 18, 'font-size': 12.5, fill: css('--ink-3'), 'font-style': 'italic' }, s); t0.textContent = 'Teluk Jakarta';
+    cells.forEach((k) => {
+      const lv = level(k.s);
+      const op = lv === 'high' ? .55 + (k.s - 70) / 60 : lv === 'mid' ? .35 + (k.s - 40) / 110 : .14 + k.s / 160;
+      const r = el('rect', { class: 'cell', x: k.c * cs + gap / 2, y: k.r * cs + gap / 2, width: cs - gap, height: cs - gap, rx: 3, fill: css('--' + lv), 'fill-opacity': Math.min(.95, op).toFixed(2) }, s);
+      r.addEventListener('mousemove', (e) => showTip(e, `Sel ${fmt(k.lat, 3)}, ${fmt(k.lon, 3)}<br><b>Indeks ${k.s}</b>, ${lvName[lv]}`));
+      r.addEventListener('mouseleave', hideTip);
+    });
+    const path = (p) => 'M' + p.map(([x, y]) => `${x * cs},${y * cs}`).join(' L');
+    [ciliwung, cisadane].forEach((p) => el('path', { d: path(p), fill: 'none', stroke: css('--rain'), 'stroke-width': 3, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, s));
+    places.forEach(([x, y, n]) => { const t = el('text', { x: x * cs, y: y * cs, 'text-anchor': 'middle', 'font-size': 13, 'font-weight': 700, fill: css('--ink'), stroke: css('--water'), 'stroke-width': 4, 'paint-order': 'stroke' }, s); t.textContent = n; });
+    reports.forEach(([x, y, t, txt, area]) => {
+      const c = el('circle', { cx: x * cs, cy: y * cs, r: 6, fill: css('--src-warga'), stroke: css('--water'), 'stroke-width': 2.5, style: 'cursor:pointer' }, s);
+      c.addEventListener('mousemove', (e) => showTip(e, `<b>${t}</b>, ${area}<br>${txt}<br>Laporan warga, belum terverifikasi`));
+      c.addEventListener('mouseleave', hideTip);
+    });
+  }
+
+  /* ---------- ranking + feed ---------- */
+  const rank = [
+    ['Jatinegara', 'Jakarta Timur', [.82, .60, .91, .95], 5], ['Tebet', 'Jakarta Selatan', [.80, .60, .88, .76], 3],
+    ['Pancoran', 'Jakarta Selatan', [.80, .60, .86, .66], 2], ['Penjaringan', 'Jakarta Utara', [.70, .60, .55, .92], 1],
+    ['Kramat Jati', 'Jakarta Timur', [.74, .60, .72, .58], 2], ['Mampang Prapatan', 'Jakarta Selatan', [.81, .60, .42, .62], 0],
+  ];
+  const w = [.30, .25, .25, .20], compName = ['Hujan 3 hari', 'Prakiraan 24 jam', 'Debit sungai', 'Riwayat banjir'];
+  $('#rank').innerHTML = rank.map(([k, kota, comp, n]) => {
+    const parts = comp.map((v, i) => v * w[i] * 100), score = Math.round(total(parts)), lv = level(score);
+    return `<div class="rk lv-${lv}"><span class="sc">${score}</span><span class="nm">${k}<small>${kota}</small></span><span class="lv">${lvName[lv]}<small>${n} laporan</small></span>
+      <span class="bar">${parts.map((p, i) => `<i class="c${i + 1}" style="width:${p}%" title="${compName[i]}: ${fmt(p)} poin"></i>`).join('')}</span></div>`;
+  }).join('');
+  $('#feed').innerHTML = reports.map(([, , t, txt, area]) => `<div><time>${t}</time><span>${txt}<small>${area}</small></span></div>`).join('');
+
+  /* ---------- the scene: drifting clouds, rain, waterline, ripples ---------- */
+  function scene() {
+    const host = $('#storm'), cv = $('#sky'), ctx = cv.getContext('2d');
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let W = 0, H = 0, drops = [], ripples = [], clouds = [], t = 0, raf, flash = 0, nextFlash = 14;
+    const WAVE = 64;
+    const surf = (x) => H - WAVE + 18 + Math.sin(x / 90 + t * 1.3) * 5 + Math.sin(x / 37 - t * 2.1) * 2.2;
+    function size() {
+      const r = host.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+      W = r.width; H = r.height; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const n = Math.round(W * H / 1700);
+      drops = Array.from({ length: n }, (_, i) => ({ i, x: Math.random() * (W + 80), y: Math.random() * H, l: 9 + Math.random() * 15, v: 6 + Math.random() * 6, a: .18 + Math.random() * .5 }));
+      clouds = Array.from({ length: Math.max(5, Math.round(W / 220)) }, () => ({ x: Math.random() * W, y: Math.random() * Math.min(260, H * .3), rx: 180 + Math.random() * 260, ry: 50 + Math.random() * 60, v: .08 + Math.random() * .18, a: .06 + Math.random() * .08 }));
+    }
+    function frame() {
+      const rain = css('--rain'), water = css('--water'), ink = css('--ink');
+      ctx.clearRect(0, 0, W, H);
+      // drifting cloud masses
+      for (const c of clouds) {
+        const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.rx);
+        g.addColorStop(0, `rgba(170,190,205,${c.a + flash * .25})`); g.addColorStop(1, 'rgba(170,190,205,0)');
+        ctx.save(); ctx.translate(c.x, c.y); ctx.scale(1, c.ry / c.rx); ctx.translate(-c.x, -c.y);
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x, c.y, c.rx, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        if (!reduce) { c.x += c.v; if (c.x - c.rx > W) c.x = -c.rx; }
+      }
+      // rain, density follows the selected city's forecast
+      const active = Math.round(drops.length * Math.min(1, intensity));
+      ctx.strokeStyle = rain; ctx.lineWidth = 1;
+      for (let k = 0; k < active; k++) {
+        const d = drops[k];
+        ctx.globalAlpha = d.a; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - d.l * .22, d.y + d.l); ctx.stroke();
+        if (!reduce) {
+          const sp = d.v * (0.8 + intensity * .3);
+          d.y += sp; d.x -= sp * .22;
+          if (d.y + d.l > surf(d.x)) { if (Math.random() < .35) ripples.push({ x: d.x, y: surf(d.x), r: 1, a: .7 }); d.y = -d.l - Math.random() * 60; d.x = Math.random() * (W + 80); }
+        }
+      }
+      // water body + surface highlight
+      ctx.globalAlpha = 1; ctx.fillStyle = water; ctx.beginPath(); ctx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 8) ctx.lineTo(x, surf(x));
+      ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = rain; ctx.globalAlpha = .55; ctx.lineWidth = 1.5; ctx.beginPath();
+      for (let x = 0; x <= W; x += 8) x === 0 ? ctx.moveTo(x, surf(x)) : ctx.lineTo(x, surf(x));
+      ctx.stroke();
+      // ripples where drops hit the water
+      ctx.lineWidth = 1; ctx.strokeStyle = ink;
+      ripples = ripples.filter((p) => p.a > .02);
+      for (const p of ripples) { ctx.globalAlpha = p.a * .6; ctx.beginPath(); ctx.ellipse(p.x, p.y + 2, p.r * 1.8, p.r * .45, 0, 0, Math.PI * 2); ctx.stroke(); if (!reduce) { p.r += .45; p.a *= .93; } }
+      ctx.globalAlpha = 1;
+      if (!reduce) {
+        t += 1 / 60;
+        // distant, soft sheet lightning: a slow glow in the clouds, never a strobe
+        if (intensity > .9 && t > nextFlash) { flash = Math.min(1, flash + .08); if (flash >= 1) nextFlash = t + 16 + Math.random() * 14; }
+        else flash *= .95;
+        raf = requestAnimationFrame(frame);
+      }
+    }
+    size(); frame();
+    new ResizeObserver(() => { cancelAnimationFrame(raf); size(); frame(); }).observe(host);
+  }
+
+  /* ---------- routing ---------- */
+  const views = ['dasbor', 'tanya', 'laporan', 'status'];
+  function route() {
+    const v = views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dasbor';
+    document.querySelectorAll('[data-sky]').forEach((n) => { n.hidden = n.dataset.sky !== v; });
+    document.querySelectorAll('[data-view-body]').forEach((n) => { n.hidden = n.dataset.viewBody !== v; });
+    document.querySelectorAll('.nav a').forEach((a) => a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
+    $('#storm').classList.toggle('short', v !== 'dasbor');
+    hideTip();
+  }
+  window.addEventListener('hashchange', route);
+
+  /* ---------- small interactions ---------- */
+  $('#askForm').addEventListener('submit', (e) => { e.preventDefault(); $('#askNote').hidden = false; });
+  document.querySelectorAll('.side button').forEach((b) => b.addEventListener('click', () => { $('#ask').value = b.textContent; $('#ask').focus(); }));
+  $('#genBtn').addEventListener('click', () => {
+    const st = $('#genStatus'), sh = $('#sheet');
+    sh.style.opacity = .35; st.textContent = 'Mengumpulkan cuaca, perubahan prakiraan, indeks risiko, laporan warga, dan peringatan resmi…';
+    setTimeout(() => { sh.style.opacity = 1; st.textContent = 'Dibuat 14.24 WIB dari get_situation_bundle dan Gemini Flash, 5,8 detik'; }, 1400);
+  });
+  $('#copyBtn').addEventListener('click', async () => {
+    const b = $('#copyBtn');
+    try { await navigator.clipboard.writeText($('#sheet').innerText); b.textContent = 'Tersalin'; }
+    catch (e) { const r = document.createRange(); r.selectNodeContents($('#sheet')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Teks terpilih, tekan Ctrl+C'; }
+    setTimeout(() => { b.textContent = 'Salin sebagai Markdown'; }, 2200);
+  });
+
+  route(); renderSky(); drawMap(); scene();
+})();
+</script>

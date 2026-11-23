@@ -1,0 +1,26 @@
+# Database lokal SIAGA NUSA · local database.
+#   docker compose up -d db
+#
+# network_mode: host karena firewall laptop (ufw + VPN kantor) memblokir
+# port forwarding host → container. Postgres langsung mendengarkan di port
+# host 5434, supaya tidak bentrok dengan Postgres lain.
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    network_mode: host
+    command: ["postgres", "-p", "${DB_PORT:-5434}", "-c", "listen_addresses=localhost"]
+    environment:
+      POSTGRES_DB: siaga_nusa
+      POSTGRES_USER: siaga
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-siaga_dev}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p ${DB_PORT:-5434} -U siaga -d siaga_nusa"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  pgdata:
