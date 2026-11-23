@@ -44,7 +44,7 @@
 | 🌧️ **Model A — Rainfall Prediction** | Memprediksi peluang hujan **sedang–lebat (≥20 mm/hari)** esok hari, mengikuti kategori intensitas hujan BMKG.<br>*Predicts the probability of **moderate-to-heavy rain (≥20 mm/day)** tomorrow, following BMKG's rainfall intensity categories.* |
 | 🌊 **Model B — Flood Occurrence Prediction** | Memprediksi peluang banjir per kecamatan Jabodetabek pada H+1, **bila lolos uji kelayakan data** di minggu ke-2.<br>*Predicts the probability of flooding per Jabodetabek district on the next day, **if it passes the data go/no-go gate** in week 2.* |
 | 🤖 **SIAGA NUSA AI Agent** | Agen Gemini yang memilih tool sendiri, menjawab langsung, atau menolak, tanpa pernah mengarang angka.<br>*A Gemini agent that picks its own tools, answers directly, or declines, without ever inventing numbers.* |
-| 🖥️ **Antarmuka · *Interface*** | Dasbor web (HTML/JS) yang disajikan FastAPI: cuaca di atas "garis air", laporan banjir di bawahnya.<br>*Web dashboard (HTML/JS) served by FastAPI: weather above the "waterline", flood reports below it.* |
+| 🖥️ **Antarmuka · *Interface*** | Web (HTML/JS) yang disajikan FastAPI: Dasbor (cuaca di atas "garis air", laporan banjir di bawahnya), Peta cuaca (animasi hujan per jam + radar + laporan banjir), Status, dan widget Tanya di kanan bawah.<br>*Web app (HTML/JS) served by FastAPI: Dashboard, Weather map (hourly rain animation + radar + flood reports), Status, and an Ask widget in the bottom-right corner.* |
 
 ### 🏷️ Setiap informasi berlabel sumber · *Every answer is source-labelled*
 
@@ -87,6 +87,8 @@ Status siaga dan peringatan resmi **hanya** berasal dari data BMKG dan diputuska
 | [BMKG](https://data.bmkg.go.id/) | Prakiraan cuaca per kelurahan, peringatan dini cuaca · *Per-village forecasts, weather warnings* | Wajib mencantumkan BMKG · *BMKG attribution required* |
 | [Open-Meteo](https://open-meteo.com/) | Prakiraan per jam, historis ERA5, *historical forecast*, *previous runs*, debit sungai GloFAS · *Hourly forecasts, ERA5 history, historical forecasts, previous runs, GloFAS river discharge* | CC BY 4.0 |
 | [PetaBencana.id](https://petabencana.id/) | Laporan banjir warga · *Citizen flood reports* | Atribusi · *Attribution* |
+| [RainViewer](https://www.rainviewer.com/) | Lapisan radar hujan di peta (observasi, cakupan Indonesia terbatas) · *Rain radar map layer* | Atribusi · *Attribution* |
+| [Esri](https://www.esri.com/) | Peta dasar Dark Gray · *Dark Gray basemap* | Atribusi · *Attribution* |
 
 ## 🚀 Menjalankan · *Running*
 
@@ -101,8 +103,8 @@ python -m pipeline.run all                 # sync snapshot → muat → bersihka
 uvicorn api.main:app --port 8010           # dasbor http://localhost:8010 · dokumentasi /docs
 ```
 
-Snapshot prakiraan dikumpulkan otomatis setiap 3 jam oleh GitHub Actions ([`snapshot.yml`](.github/workflows/snapshot.yml)) ke branch [`data-snapshots`](https://github.com/AbdurraghibSS/SIAGA-NUSA/tree/data-snapshots), karena BMKG tidak menyediakan arsip prakiraan. `pipeline.run sync` mengambil branch itu.<br>
-*Forecast snapshots are collected every 3 hours by GitHub Actions into the `data-snapshots` branch, because BMKG keeps no forecast archive. `pipeline.run sync` pulls that branch.*
+Snapshot prakiraan dikumpulkan otomatis oleh GitHub Actions (dijadwalkan tiap jam; kenyataannya ±3 kali sehari karena GitHub sering menunda cron) ([`snapshot.yml`](.github/workflows/snapshot.yml)) ke branch [`data-snapshots`](https://github.com/AbdurraghibSS/SIAGA-NUSA/tree/data-snapshots), karena BMKG tidak menyediakan arsip prakiraan. `pipeline.run sync` mengambil branch itu.<br>
+*Forecast snapshots are collected by GitHub Actions (scheduled hourly; in practice ±3 times a day because GitHub often delays cron) into the `data-snapshots` branch, because BMKG keeps no forecast archive. `pipeline.run sync` pulls that branch.*
 
 ### 🔁 Alur data · *Data flow*
 
@@ -117,6 +119,8 @@ Snapshot prakiraan dikumpulkan otomatis setiap 3 jam oleh GitHub Actions ([`snap
 
 Semua job idempotent (`ON CONFLICT`), dan setiap eksekusi tercatat di `ingest_runs` untuk halaman Status.<br>
 *All jobs are idempotent (`ON CONFLICT`), and every run is logged in `ingest_runs` for the Status page.*
+
+📄 Penjelasan lengkap · *Full walkthrough*: [`docs/data-processing.md`](docs/data-processing.md)
 
 ## 🚧 Status & Roadmap
 
