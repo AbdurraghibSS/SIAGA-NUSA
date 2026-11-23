@@ -174,6 +174,8 @@ button { font: inherit; color: inherit; }
 .leaflet-control-attribution { background: rgba(15,23,30,.75) !important; color: var(--ink-3) !important; }
 .leaflet-control-attribution a { color: var(--ink-2) !important; }
 .leaflet-bar a { background: var(--sky); color: var(--ink); border-color: var(--rule); }
+.osm-dark { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.4); }
+.map-label.leaflet-tooltip-left, .map-label.leaflet-tooltip-right { text-align: center; }
 .layer-notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 32px; }
 .layer-notes div { border-top: 1px solid var(--rule); padding-top: 12px; font-size: 14.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 6px; }
 .layer-notes h3 { font-size: 22px; font-weight: 700; color: var(--ink); }
@@ -774,9 +776,23 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     if (wx) { wx.map.invalidateSize(); return; }
     if (!window.L) { showError('Pustaka peta (Leaflet) gagal dimuat. Periksa koneksi internet lalu muat ulang.'); return; }
     const map = L.map('wxmap', { minZoom: 4, maxZoom: 11, zoomSnap: .5 });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd', maxZoom: 19, attribution: '&copy; OpenStreetMap &copy; CARTO',
+    // Peta dasar Esri Dark Gray (tanpa API key). CARTO kini mewajibkan key.
+    // Kalau Esri gagal, pindah ke OpenStreetMap yang digelapkan dengan filter CSS.
+    const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+    const base = L.tileLayer(ESRI + 'World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 16, attribution: 'Peta dasar &copy; Esri, HERE, Garmin, &copy; OpenStreetMap',
     }).addTo(map);
+    let baseErrors = 0;
+    base.on('tileerror', () => {
+      if (++baseErrors !== 4) return;
+      map.removeLayer(base);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, className: 'osm-dark', attribution: '&copy; OpenStreetMap',
+      }).addTo(map);
+    });
+    map.createPane('labels').style.zIndex = 450;  // nama tempat di atas radar, di bawah penanda
+    map.getPane('labels').style.pointerEvents = 'none';
+    L.tileLayer(ESRI + 'World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { pane: 'labels', minZoom: 7, maxZoom: 16 }).addTo(map);
     map.fitBounds([[-8.6, 97.5], [4.6, 120.5]]);
     wx = { map, cities: L.layerGroup().addTo(map), floods: L.layerGroup().addTo(map), radar: null, data: null, markers: [], hour: 0 };
     map.on('popupopen', (e) => {
@@ -795,10 +811,14 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     loadRadar();
   }
 
+  // Kota di Jawa berdekatan; arah label dipisah supaya tidak bertumpuk.
+  const LABEL_DIR = { jakarta: 'top', bogor: 'left', bandung: 'right', semarang: 'top', yogyakarta: 'bottom' };
+  const LABEL_OFFSET = { top: [0, -10], bottom: [0, 10], left: [-10, 0], right: [10, 0] };
   function buildCities() {
     wx.markers = wx.data.cities.map((c) => {
       const mk = L.circleMarker([c.lat, c.lon], { radius: 8, color: css('--rain'), weight: 1.5, fillColor: css('--rain'), fillOpacity: .3 });
-      mk.bindTooltip('', { permanent: true, direction: 'bottom', offset: [0, 8], className: 'map-label' });
+      const dir = LABEL_DIR[c.slug] || 'bottom';
+      mk.bindTooltip('', { permanent: true, direction: dir, offset: LABEL_OFFSET[dir], className: 'map-label' });
       mk.on('click', () => mk.bindPopup(cityPopup(c)).openPopup());
       mk.addTo(wx.cities);
       return mk;
