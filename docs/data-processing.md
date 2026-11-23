@@ -312,7 +312,15 @@ Dua penyesuaian terhadap rencana awal, keduanya karena data asli:
 | ≥20 laporan | 41 | 0,66 | 0,60 | 0,70 |
 | ≥50 laporan | 12 | 0,78 | 0,83 | 0,84 |
 
-Untuk label ≥20 laporan, peluang banjir di hari berskor **Tinggi 9,8%**, Sedang 4,8%, dan Rendah 1,7%. Indeks makin tajam untuk banjir yang makin besar. Kalau label diganti menjadi "≥1 laporan dalam radius 5 km dari Kemayoran", AUC hanya ±0,55, karena laporan tunggal yang tersebar tidak berhubungan dengan hujan skala 25 km. Bobot v1 **tidak disetel ulang**: dengan 12 hari banjir besar, menyetel bobot hanya akan mencocokkan data yang sedikit itu.
+Untuk label ≥20 laporan, peluang banjir di hari berskor **Tinggi 9,8%**, Sedang 4,8%, dan Rendah 1,7%. Indeks makin tajam untuk banjir yang makin besar. Kalau label diganti menjadi "≥1 laporan dalam radius 5 km dari Kemayoran", AUC hanya ±0,55, karena laporan tunggal yang tersebar tidak berhubungan dengan hujan skala 25 km. **Apakah bobotnya sebaiknya diambil dari data?** Ini diuji di [`notebooks/03_bobot_indeks_risiko.ipynb`](../notebooks/03_bobot_indeks_risiko.ipynb), dan semua run dicatat di MLflow:
+
+| Uji | Hasil |
+|---|---|
+| 231 kombinasi bobot (label ≥20) | AUC 0,54–0,68. Bobot manual 0,661 ada di median, hanya 0,023 di bawah yang terbaik. Permukaannya landai |
+| Regresi logistik koefisien ≥0, *leave-one-season-out* | AUC sama dengan manual untuk ≥5 dan ≥20, lebih rendah untuk ≥50 (0,757 vs 0,777). Bobotnya tidak stabil antar fold (debit 0,46–0,84) |
+| Bootstrap per musim | Selisih AUC ≈ 0, interval 95% memuat 0 |
+
+Kesimpulannya, bobot manual dipertahankan. Batas ketajaman indeks ada di input (ERA5 ±25 km), bukan di bobot. Uji ini diulang setelah arsip prakiraan asli mencapai satu musim hujan.
 
 ---
 
@@ -372,7 +380,7 @@ docker compose up -d db                  # PostgreSQL 16 + PostGIS di localhost:
 python -m pipeline.run all               # semua job, berurutan
 python -m pipeline.run forecasts views   # atau job tertentu saja
 uvicorn api.main:app --port 8010         # dasbor http://localhost:8010 · /docs
-pytest -q                                # 73 test unit, tanpa database
+pytest -q                                # 77 test unit, tanpa database
 ```
 
 ---

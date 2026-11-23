@@ -21,6 +21,10 @@ musim hujan (Jakarta ±0,25, Bogor ±0,01), skor penuh di 0,20 (1 dari 5 hari).
 Komponen yang datanya tidak ada (mis. laporan warga hanya tersedia di Jabodetabek)
 dikeluarkan dan bobot sisanya dinormalkan ulang. Komponen yang dipakai dicatat.
 Level sengaja tidak memakai Waspada/Siaga/Awas (istilah resmi BMKG/BPBD).
+
+Bobot ditetapkan manual (plan §6.3). Notebook 03 menguji apakah bobot dari data lebih baik
+(231 kombinasi, regresi logistik non-negatif leave-one-season-out, bootstrap per musim):
+tidak lebih baik, jadi bobot manual dipertahankan.
 """
 
 from bisect import bisect_left, bisect_right
