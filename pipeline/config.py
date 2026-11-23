@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # oleh server (--serve-artifacts). Di laptop pengembangan server ini sudah jalan di :5000.
     mlflow_tracking_uri: str = "http://127.0.0.1:5000"
 
+    # True: API juga menyajikan dasbor web/ (uvicorn langsung). Di Docker, dasbor disajikan
+    # container frontend (nginx), jadi backend memakai SERVE_WEB=false.
+    serve_web: bool = True
+
     # Kunci untuk endpoint admin API (mis. menjalankan ulang pipeline). Kosong = endpoint dimatikan.
     api_key: str | None = None
 

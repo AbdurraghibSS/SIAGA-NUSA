@@ -405,4 +405,6 @@ def refresh(background: BackgroundTasks, full: bool = False) -> dict:
 
 
 # Dasbor statis (harus dipasang terakhir supaya tidak menutupi /api).
-app.mount("/", StaticFiles(directory=REPO_ROOT / "web", html=True), name="web")
+# Di Docker dimatikan: container frontend (nginx) yang menyajikan web/.
+if settings.serve_web:
+    app.mount("/", StaticFiles(directory=REPO_ROOT / "web", html=True), name="web")

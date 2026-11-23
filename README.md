@@ -98,10 +98,18 @@ pip install -e ".[dev]"
 cp .env.example .env
 pytest -q
 
-docker compose up -d db                    # PostgreSQL 16 + PostGIS di localhost:5434
+docker compose up -d --build               # db + backend + frontend, ikut naik setiap Docker hidup
 python -m pipeline.run all                 # sync snapshot → muat → bersihkan → view SQL
-uvicorn api.main:app --port 8010           # dasbor http://localhost:8010 · dokumentasi /docs
 ```
+
+| Container | Isi | Alamat |
+|---|---|---|
+| `db` | PostgreSQL 16 + PostGIS | `localhost:5434` |
+| `backend` | FastAPI: `/api`, `/health`, `/docs` | `127.0.0.1:8011` |
+| `frontend` | nginx: dasbor `web/`, meneruskan `/api` & `/docs` ke backend | **http://localhost:8010** |
+
+Mengubah `web/` atau kode backend? Jalankan ulang `docker compose up -d --build`. Untuk pengembangan cepat tanpa Docker, `uvicorn api.main:app --reload --port 8010` tetap menyajikan API dan dasbor sekaligus (hentikan dulu container `frontend` karena memakai port yang sama).<br>
+*All three containers restart with Docker. The frontend (nginx) serves the dashboard and proxies `/api` to the backend; rebuild after changes.*
 
 Snapshot prakiraan dikumpulkan otomatis oleh GitHub Actions (dijadwalkan tiap jam; kenyataannya ±3 kali sehari karena GitHub sering menunda cron) ([`snapshot.yml`](.github/workflows/snapshot.yml)) ke branch [`data-snapshots`](https://github.com/AbdurraghibSS/SIAGA-NUSA/tree/data-snapshots), karena BMKG tidak menyediakan arsip prakiraan. `pipeline.run sync` mengambil branch itu.<br>
 *Forecast snapshots are collected by GitHub Actions (scheduled hourly; in practice ±3 times a day because GitHub often delays cron) into the `data-snapshots` branch, because BMKG keeps no forecast archive. `pipeline.run sync` pulls that branch.*
@@ -136,7 +144,8 @@ Proyek ini sedang dikembangkan (30 Oktober – 23 Desember 2026).<br>
 - [ ] Model A (+ Model B bila lolos *gate*) dengan MLflow · *Model A (+ Model B if it passes the gate) with MLflow*
 - [ ] Agen Gemini + tools · *Gemini agent + tools*
 - [ ] Chat agen & laporan situasi di dasbor · *Agent chat & situation report in the dashboard*
-- [ ] `docker compose up` + deploy Azure VM · *`docker compose up` + Azure VM deployment*
+- [x] `docker compose up`: db + backend + frontend · *db + backend + frontend containers*
+- [ ] Deploy Azure VM · *Azure VM deployment*
 - [ ] Uji keamanan prompt injection · *Prompt injection security testing*
 - [ ] Showcase — 23 Desember 2026
 

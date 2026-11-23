@@ -376,10 +376,10 @@ Ukuran database 54 MB. Satu eksekusi penuh `pipeline.run all` butuh ±35 detik.
 ## 12. Menjalankan
 
 ```bash
-docker compose up -d db                  # PostgreSQL 16 + PostGIS di localhost:5434
+docker compose up -d --build             # db + backend (8011) + frontend nginx (8010)
 python -m pipeline.run all               # semua job, berurutan
 python -m pipeline.run forecasts views   # atau job tertentu saja
-uvicorn api.main:app --port 8010         # dasbor http://localhost:8010 · /docs
+# dasbor http://localhost:8010 · dokumentasi API http://localhost:8010/docs
 pytest -q                                # 77 test unit, tanpa database
 ```
 
