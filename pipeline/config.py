@@ -19,9 +19,9 @@ class Settings(BaseSettings):
     snapshot_branch: str = "data-snapshots"
     data_dir: Path = REPO_ROOT / "data"
 
-    # MLflow (plan §6.5): backend SQLite, artefak di folder lokal. Keduanya tidak masuk git.
-    mlflow_tracking_uri: str = f"sqlite:///{REPO_ROOT / 'mlflow.db'}"
-    mlflow_artifact_dir: Path = REPO_ROOT / "mlartifacts"
+    # MLflow (plan §6.5): satu server tracking untuk semua eksperimen, artefak disimpan
+    # oleh server (--serve-artifacts). Di laptop pengembangan server ini sudah jalan di :5000.
+    mlflow_tracking_uri: str = "http://127.0.0.1:5000"
 
     # Kunci untuk endpoint admin API (mis. menjalankan ulang pipeline). Kosong = endpoint dimatikan.
     api_key: str | None = None

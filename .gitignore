@@ -17,7 +17,6 @@ data/
 snapshots/
 mlruns/
 mlartifacts/
-mlflow.db
 *.parquet
 *.joblib
 
