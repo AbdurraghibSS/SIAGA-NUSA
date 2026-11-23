@@ -21,6 +21,7 @@ flowchart LR
         OM["Open-Meteo<br/>prakiraan per jam"]
         ERA["Open-Meteo Archive<br/>ERA5 harian"]
         PB["PetaBencana<br/>laporan banjir warga"]
+        GF["Open-Meteo Flood<br/>debit GloFAS"]
     end
 
     GHA["GitHub Actions<br/>snapshot.yml"] -->|commit JSON| BR[("branch<br/>data-snapshots")]
@@ -32,17 +33,20 @@ flowchart LR
     SNAP -->|forecasts · ETL pandas| FC[("forecast_bmkg<br/>forecast_hourly")]
     ERA -->|history| OBS[("obs_daily")]
     PB -->|floods| FR[("flood_reports")]
+    GF -->|rivers| RD[("river_daily")]
     FC -. ditolak .-> Q[("quarantine")]
 
     RAW --> V["views.sql<br/>CTE · window · FILTER"]
     FC --> V
     OBS --> V
     FR --> V
+    RD --> V
     V --> API["FastAPI<br/>/api/*"]
+    API --> RISK["Indeks risiko<br/>pipeline/risk.py"]
     API --> WEB["Dasbor · Peta · Status"]
 ```
 
-Pipeline dijalankan dengan satu perintah, `python -m pipeline.run all`, yang mengeksekusi job berurutan: `init → sync → raw → forecasts → history → floods → views`.
+Pipeline dijalankan dengan satu perintah, `python -m pipeline.run all`, yang mengeksekusi job berurutan: `init → sync → raw → forecasts → history → floods → rivers → views`.
 
 ---
 
@@ -54,6 +58,7 @@ Pipeline dijalankan dengan satu perintah, `python -m pipeline.run all`, yang men
 | **Open-Meteo Forecast** | Prakiraan per jam, 7 hari: hujan, peluang hujan, suhu, kelembapan, angin, awan | Diperbarui per jam | Resolusi jam, dipakai untuk grafik dan peta | 🔵 Data model cuaca |
 | **Open-Meteo Archive (ERA5)** | Hujan harian historis sejak 2017 | Harian, tertinggal ±5 hari | Akumulasi hujan dan label Model A | 🔵 Data model cuaca |
 | **PetaBencana.id** | Laporan banjir warga (titik koordinat) | Realtime | Bukti kejadian banjir di lapangan | 🟡 Laporan warga |
+| **Open-Meteo Flood (GloFAS v4)** | Debit sungai harian sejak 1984 + prakiraan 30 hari, grid 0,05° | Harian | Komponen debit di indeks risiko | 🔵 Data model cuaca |
 
 Lokasi pilot ada 8 kota, dengan titik koordinat diambil dari kelurahan BMKG supaya BMKG dan Open-Meteo merujuk ke titik yang sama ([`pipeline/locations.py`](../pipeline/locations.py)). Makassar memakai **WITA**, kota lain WIB.
 
@@ -95,6 +100,28 @@ Workflow [`snapshot.yml`](../.github/workflows/snapshot.yml) memanggil BMKG (8 k
 |---|---|---|
 | `history` (ERA5) | Backfill dari file arsip 2017–2026, lalu **menyusul hari yang belum ada** lewat API arsip Open-Meteo | ERA5 tertinggal ±5 hari, sehingga API mengembalikan `null` untuk hari terbaru. Hari itu **dibuang, bukan disimpan kosong**: kalau baris kosong sudah tersimpan, `ON CONFLICT DO NOTHING` akan menghalangi angka aslinya masuk nanti |
 | `floods` (PetaBencana) | Arsip **bulan lalu dan bulan ini ditarik ulang** setiap eksekusi, lalu semua arsip lokal dimuat | Laporan yang datang terlambat ikut masuk |
+| `rivers` (GloFAS) | Riwayat 2010–sekarang ditarik **per tahun** ke `data/raw/glofas/daily_<tahun>.json` (tahun lampau tidak ditarik ulang), lalu 14 hari terakhir + prakiraan 7 hari | Nilai prakiraan berubah setiap hari, jadi dimuat dengan `ON CONFLICT ... DO UPDATE`. Jawaban 429 (kuota per menit) ditunggu 65 detik |
+
+#### Memilih sel sungai
+
+GloFAS memakai grid 0,05° (±5,5 km). Sungai kota yang kecil tidak selalu jatuh di sel terdekat, dan sel dengan debit terbesar di sekitarnya bisa saja sungai lain. Contohnya di Medan, sel 129 m³/s di timur kota bukan Sungai Deli. Langkah memilihnya:
+
+1. Cetak grid 7×7 debit klimatologis (`river_discharge_mean`) di sekitar kota.
+2. Ambil sel yang membentuk **alur**, yaitu debitnya naik ke arah hilir. Contohnya Citarum: 14 → 27 → 33 m³/s ke arah barat dari Dayeuhkolot.
+3. Uji: korelasi peringkat (Spearman) debit harian dengan hujan 3 hari ERA5 kota itu, 2017–2026.
+
+| Kota | Sel sungai | Keyakinan | Spearman ρ |
+|---|---|---|---:|
+| Jakarta | Ciliwung (Manggarai) | sedang | 0,87 |
+| Bogor | Cisadane (Bogor). Sel Ciliwung di Katulampa hanya ±1 m³/s | sedang | 0,76 |
+| Bandung | Citarum (Dayeuhkolot) | tinggi | 0,77 |
+| Semarang | Kali Garang (hulu) | rendah | 0,84 |
+| Yogyakarta | Kali Code / Winongo | rendah | 0,82 |
+| Surabaya | Kali Surabaya (Wonokromo) | rendah | 0,84 |
+| Medan | Sungai Deli | sedang | 0,75 |
+| Makassar | Jeneberang | rendah | 0,71 |
+
+Debit GloFAS untuk sungai kecil jauh di bawah debit terukur. Karena itu indeks risiko memakai **persentil terhadap riwayat sel itu sendiri**, bukan angka m³/s. Satu jebakan lain: parameter `timezone=Asia/Jakarta` menggeser nilai satu hari, karena GloFAS menghitung rata-rata per hari UTC. Permintaan dibiarkan dalam UTC.
 
 ---
 
@@ -205,6 +232,8 @@ Kode: [`sql/views.sql`](../sql/views.sql). Logika yang lebih alami dalam SQL dit
 | `v_obs_rolling` | Berapa hujan 3 dan 7 hari terakhir? Masuk kategori apa? | `SUM() OVER (... RANGE BETWEEN INTERVAL '2 days' PRECEDING ...)` + fungsi `bmkg_category()` (`CASE WHEN`) |
 | `v_flood_reports_daily` | Berapa laporan dipakai dan disaring per hari? | `COUNT(*) FILTER (WHERE ...)` |
 | `v_source_freshness` | Kapan tiap sumber terakhir masuk, berapa kota yang berhasil? | CTE + `FILTER` + jendela 10 menit, karena BMKG diambil per kota dengan jeda 1 detik |
+| `v_rain_recent_est` | Berapa hujan pada jam yang sudah lewat? (ERA5 belum tersedia) | `DISTINCT ON (location, valid_at) ... ORDER BY issued_at DESC`: nilai dari run terbaru yang memuat jam itu |
+| `v_flood_season_freq` | Seberapa sering ada laporan banjir di sekitar kota? | PostGIS `ST_ConvexHull` (cakupan laporan), `ST_DWithin` radius 5 km pada `geography`, `generate_series` hari musim hujan |
 
 Contoh: perubahan prakiraan Jakarta untuk 24 jam ke depan menunjukkan **9,7 mm → 14,6 mm** antara run pukul 04.48 dan 09.48 WIB.
 
@@ -236,6 +265,8 @@ Kode: [`api/main.py`](../api/main.py), [`api/logic.py`](../api/logic.py), [`web/
 | `GET /api/map` | Semua kota dengan 24 jam datanya, satu panggilan | Animasi di halaman Peta |
 | `GET /api/floods` | Kepadatan laporan per sel 0,05°, ranking wilayah, laporan terbaru | Bagian bawah "garis air", lapisan peta |
 | `GET /api/history/{kota}` | Hujan harian ERA5 + akumulasi 3 dan 7 hari | Disiapkan untuk agen dan Model A |
+| `GET /api/risk` | Indeks risiko 0–100 per kota + rincian keempat komponen | Papan duga & rincian poin di dasbor, daftar kota, popup peta; nanti tool agen |
+| `GET /api/river/{kota}` | Debit harian sel sungai kota + median & p90 bulan berjalan | Grafik debit di dasbor |
 | `GET /api/status` | Kesegaran sumber, job terakhir, karantina | Halaman Status |
 | `POST /api/admin/refresh` | Menjalankan pipeline di latar belakang | Dilindungi header `X-API-Key` |
 
@@ -255,6 +286,34 @@ Kalimat ini **bukan prediksi model ML SIAGA NUSA**, dan juga bukan teks statis. 
 
 Fungsi `headline()` di frontend menyusunnya menjadi kalimat. Tepat di bawahnya UI menuliskan sumbernya: *"Disusun otomatis dari prakiraan per jam Open-Meteo …, bukan prediksi model SIAGA NUSA."*
 
+### Indeks risiko banjir (rule-based v1)
+
+Kode: [`pipeline/risk.py`](../pipeline/risk.py), fungsi murni yang punya unit test. Setiap komponen diberi skor 0–1:
+
+| Komponen | Bobot | Dari | Skor |
+|---|:-:|---|---|
+| Hujan 72 jam terakhir | 0,30 | `v_rain_recent_est` | Persentil terhadap jumlah 3 hari ERA5 di bulan yang sama |
+| Prakiraan 24 jam | 0,25 | Run Open-Meteo terbaru | Kategori BMKG: ringan 0 · sedang 0,3 · lebat 0,6 · sangat lebat 0,85 · ekstrem 1 |
+| Debit sungai | 0,25 | `river_daily`, hari ini–besok | Persentil terhadap riwayat bulan yang sama |
+| Riwayat laporan banjir | 0,20 | `v_flood_season_freq` | Proporsi hari musim hujan berlaporan; skor penuh di 0,20 |
+
+`skor = round(100 × Σ bobot × komponen)` → **Rendah** (<40) · **Sedang** (40–69) · **Tinggi** (≥70). Komponen yang datanya tidak ada dikeluarkan, lalu bobot sisanya dinormalkan ulang. Contohnya laporan warga, yang baru tersedia untuk Jabodetabek.
+
+Dua penyesuaian terhadap rencana awal, keduanya karena data asli:
+
+1. **Hanya bagian di atas median yang menambah skor** (persentil ≤50 → 0, persentil 100 → 1). Tanpa ini hari biasa (persentil ±50) sudah mendapat setengah skor, dan hampir semua hari jatuh di level Sedang.
+2. **Frekuensi banjir diukur per hari, bukan per musim.** Ukuran "musim yang punya laporan" bernilai 8/8 untuk Jakarta (1.520 laporan) maupun Bogor (18 laporan), jadi tidak membedakan apa-apa. Proporsi hari membedakannya: Jakarta 25%, Bogor 1%.
+
+**Backtest** (Jakarta, musim hujan 2017/18–2024/25, 1.450 hari). Hujan dan debit diambil dari ERA5 dan GloFAS historis. Prakiraan diganti hujan ERA5 hari itu, jadi anggap ini prakiraan sempurna dan hasilnya optimistis. Label: hari dengan laporan banjir di Jabodetabek.
+
+| Label | Hari | AUC indeks | AUC hujan 72 jam | AUC debit |
+|---|---:|---:|---:|---:|
+| ≥5 laporan | 197 | 0,59 | 0,57 | 0,61 |
+| ≥20 laporan | 41 | 0,66 | 0,60 | 0,70 |
+| ≥50 laporan | 12 | 0,78 | 0,83 | 0,84 |
+
+Untuk label ≥20 laporan, peluang banjir di hari berskor **Tinggi 9,8%**, Sedang 4,8%, dan Rendah 1,7%. Indeks makin tajam untuk banjir yang makin besar. Kalau label diganti menjadi "≥1 laporan dalam radius 5 km dari Kemayoran", AUC hanya ±0,55, karena laporan tunggal yang tersebar tidak berhubungan dengan hujan skala 25 km. Bobot v1 **tidak disetel ulang**: dengan 12 hari banjir besar, menyetel bobot hanya akan mencocokkan data yang sedikit itu.
+
 ---
 
 ## 9. Temuan dari data asli
@@ -267,6 +326,8 @@ Fungsi `headline()` di frontend menyusunnya menjadi kalimat. Tepat di bawahnya U
 | ERA5 **tertinggal ±5 hari**, ERA5-Land lebih lama lagi | Hari tanpa data tidak disimpan; badge di UI menyebut "s.d. 17 Nov · tertinggal ±5 hari" |
 | **>50% laporan banjir** di arsip adalah latihan atau uji, padahal berstatus `confirmed` | Tiga lapis penanda; laporan tetap disimpan dengan alasan |
 | Laporan banjir Jabodetabek terakhir **25 Okt** | Bukan bug; musim kemarau baru selesai. Badge berwarna kuning karena datanya sudah lama |
+| Banjir terbesar di data (**25 Feb 2020, 1.131 laporan**) hanya tercatat **10 mm** hujan di ERA5 Jakarta | Reanalysis ±25 km melewatkan hujan ekstrem lokal. Indeks tidak boleh hanya bergantung pada ERA5. Ini juga alasan Model A dan peringatan dini BMKG penting |
+| GloFAS menaruh debit sungai kecil di sel yang tidak terduga (Katulampa ±1 m³/s; sel terbesar dekat Medan adalah sungai lain) | Sel sungai dipilih manual per kota, diuji dengan korelasi hujan, dan tingkat keyakinannya ditulis |
 | `bmkg_category()` di Python memberi `None` di bawah 0,5 mm, sedangkan versi SQL memberi "tidak hujan" | Ketahuan lewat unit test sebelum muncul sebagai "hujan null" di dasbor. Kini disamakan |
 
 ---
@@ -281,9 +342,10 @@ Fungsi `headline()` di frontend menyusunnya menjadi kalimat. Tepat di bawahnya U
 | `obs_daily` (ERA5) | 28.864 | 1 Jan 2017 – 17 Nov 2026 |
 | `obs_daily` (ERA5-Land) | 28.728 | 1 Jan 2017 – 31 Okt 2026 |
 | `flood_reports` | 23.981 | Des 2016 – Okt 2026 (11.161 dipakai) |
+| `river_daily` (GloFAS) | 49.416 | 1 Jan 2010 – 29 Nov 2026, 8 titik (56 baris prakiraan) |
 | `quarantine` | 32 | |
 
-Ukuran database 48 MB. Satu eksekusi penuh `pipeline.run all` butuh ±35 detik.
+Ukuran database 54 MB. Satu eksekusi penuh `pipeline.run all` butuh ±35 detik.
 
 ---
 
@@ -310,7 +372,7 @@ docker compose up -d db                  # PostgreSQL 16 + PostGIS di localhost:
 python -m pipeline.run all               # semua job, berurutan
 python -m pipeline.run forecasts views   # atau job tertentu saja
 uvicorn api.main:app --port 8010         # dasbor http://localhost:8010 · /docs
-pytest -q                                # 48 test unit, tanpa database
+pytest -q                                # 73 test unit, tanpa database
 ```
 
 ---
@@ -319,7 +381,6 @@ pytest -q                                # 48 test unit, tanpa database
 
 | Bagian | Status |
 |---|---|
-| Debit sungai GloFAS + indeks risiko banjir | Belum ditarik. Peta sementara menampilkan kepadatan laporan warga |
 | Model A (peluang hujan ≥20 mm besok) | Label sudah ada di `v_obs_rolling.is_moderate_plus`; model belum dilatih |
 | Peringatan dini BMKG (RSS/CAP) | Belum tersambung |
 | Poligon kecamatan (PostGIS) | Wilayah masih memakai kode kab/kota dan sel grid 0,05° |

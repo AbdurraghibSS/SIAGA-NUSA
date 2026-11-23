@@ -92,6 +92,7 @@ class QuarantineCount(BaseModel):
 
 class DataRanges(BaseModel):
     era5_last_date: str | None
+    river_last_date: str | None = Field(description="Hari terakhir debit GloFAS yang bukan prakiraan")
     flood_last_report_at: str | None
     flood_reports_used: int
     flood_reports_excluded: int
@@ -167,3 +168,51 @@ class MapCity(BaseModel):
 class WeatherMap(BaseModel):
     window_start: str = Field(description="Jam pertama slider, WIB")
     cities: list[MapCity]
+
+
+class RiskComponent(BaseModel):
+    key: str = Field(description="rain_72h | forecast | river | flood_freq")
+    label: str
+    source: str = Field(description="Label sumber untuk UI: DATA MODEL CUACA / LAPORAN WARGA")
+    available: bool
+    score: float | None = Field(description="Skor komponen 0–1")
+    weight: float | None = Field(description="Bobot setelah dinormalkan ulang (komponen tidak tersedia = None)")
+    value: float | None = Field(description="Nilai mentah dalam satuan `unit`")
+    unit: str | None
+    percentile: float | None = Field(description="Persentil terhadap riwayat bulan yang sama (0–1)")
+    detail: str = Field(description="Kalimat pendek untuk UI dan agen")
+
+
+class CityRisk(BaseModel):
+    slug: str
+    city: str
+    score: int | None
+    level: str | None = Field(description="Rendah | Sedang | Tinggi (bukan istilah resmi BMKG/BPBD)")
+    method_version: str
+    components: list[RiskComponent]
+
+
+class RiskOverview(BaseModel):
+    computed_at: str
+    month: int = Field(description="Bulan acuan persentil")
+    cities: list[CityRisk]
+
+
+class RiverDay(BaseModel):
+    date: str
+    discharge_m3s: float
+    is_forecast: bool
+
+
+class RiverSeries(BaseModel):
+    slug: str
+    city: str
+    point: str
+    river: str
+    lat: float
+    lon: float
+    confidence: str
+    note: str | None
+    month_p50_m3s: float | None = Field(description="Median debit bulan berjalan (riwayat 2010–2025)")
+    month_p90_m3s: float | None
+    days: list[RiverDay]

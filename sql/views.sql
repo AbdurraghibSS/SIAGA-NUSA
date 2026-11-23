@@ -101,3 +101,51 @@ SELECT
 FROM raw_payloads r
 JOIN last l USING (source)
 GROUP BY r.source, l.last_fetched_at;
+
+-- 7. Estimasi hujan per jam untuk jam yang sudah lewat: ambil nilai dari run Open-Meteo
+--    TERBARU yang memuat jam itu (DISTINCT ON). ERA5 tertinggal ±5 hari, jadi hujan
+--    72 jam terakhir untuk indeks risiko diambil dari sini. Ini estimasi model, bukan pengukuran.
+CREATE OR REPLACE VIEW v_rain_recent_est AS
+SELECT DISTINCT ON (location, valid_at)
+    location, valid_at, issued_at, precip_mm
+FROM forecast_hourly
+ORDER BY location, valid_at, issued_at DESC;
+
+-- 8. Frekuensi banjir historis per kota (komponen indeks risiko): proporsi HARI musim
+--    hujan (Nov–Apr, 2017/18–2024/25) yang punya ≥1 laporan warga dalam radius 5 km.
+--    Ukuran "musim yang punya laporan" (plan awal) mentok di 8/8 untuk Jakarta (1.520
+--    laporan) maupun Bogor (18 laporan), jadi tidak membedakan apa-apa; proporsi hari
+--    membedakan (±25 persen vs ±1 persen). Bias: kepadatan laporan juga mencerminkan jumlah pengguna.
+--    Hanya kota di dalam cakupan laporan (convex hull semua laporan) yang dihitung;
+--    kota lain tidak muncul = komponen tidak tersedia, bukan nol.
+DROP VIEW IF EXISTS v_flood_season_freq;
+CREATE VIEW v_flood_season_freq AS
+WITH hull AS (
+    SELECT ST_ConvexHull(ST_Collect(geom)) AS g FROM flood_reports WHERE exclusion_reason IS NULL
+),
+covered AS (
+    SELECT l.slug, ST_SetSRID(ST_MakePoint(l.lon, l.lat), 4326)::geography AS pt
+    FROM locations l, hull
+    WHERE ST_Contains(hull.g, ST_SetSRID(ST_MakePoint(l.lon, l.lat), 4326))
+),
+season_days AS (
+    SELECT d::date AS date
+    FROM generate_series(DATE '2017-11-01', DATE '2025-04-30', INTERVAL '1 day') d
+    WHERE EXTRACT(MONTH FROM d) IN (11, 12, 1, 2, 3, 4)
+),
+flood_days AS (
+    SELECT c.slug, (f.created_at AT TIME ZONE 'Asia/Jakarta')::date AS date, COUNT(*) AS n_reports
+    FROM covered c
+    JOIN flood_reports f
+      ON f.exclusion_reason IS NULL AND ST_DWithin(f.geom::geography, c.pt, 5000)
+    GROUP BY 1, 2
+)
+SELECT
+    c.slug                                            AS location,
+    COUNT(fd.date)                                    AS flood_days,
+    (SELECT COUNT(*) FROM season_days)                AS season_days,
+    COALESCE(SUM(fd.n_reports), 0)                    AS n_reports,
+    ROUND(COUNT(fd.date)::numeric / (SELECT COUNT(*) FROM season_days), 4) AS freq
+FROM covered c
+LEFT JOIN flood_days fd ON fd.slug = c.slug AND fd.date IN (SELECT date FROM season_days)
+GROUP BY c.slug;

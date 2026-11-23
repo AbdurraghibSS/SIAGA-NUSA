@@ -16,6 +16,7 @@ from sqlalchemy import create_engine, text
 
 from pipeline.config import REPO_ROOT, settings
 from pipeline.locations import PILOT_LOCATIONS
+from pipeline.rivers import RIVER_POINTS
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ def run_sql_file(name: str) -> None:
 
 
 def init_db() -> None:
-    """Buat tabel (kalau belum ada) dan isi tabel referensi lokasi."""
+    """Buat tabel (kalau belum ada) dan isi tabel referensi lokasi + titik sungai."""
     run_sql_file("schema.sql")
     with engine.begin() as conn:
         conn.execute(
@@ -47,6 +48,16 @@ def init_db() -> None:
                 {"slug": l.slug, "city": l.city, "name": l.name, "adm4": l.adm4, "lat": l.lat, "lon": l.lon, "tz": l.tz}
                 for l in PILOT_LOCATIONS
             ],
+        )
+        conn.execute(
+            text("""
+                INSERT INTO river_points (slug, location, river, lat, lon, confidence, note)
+                VALUES (:slug, :location, :river, :lat, :lon, :confidence, :note)
+                ON CONFLICT (slug) DO UPDATE
+                SET location = EXCLUDED.location, river = EXCLUDED.river, lat = EXCLUDED.lat,
+                    lon = EXCLUDED.lon, confidence = EXCLUDED.confidence, note = EXCLUDED.note
+            """),
+            [vars(p) for p in RIVER_POINTS],
         )
 
 

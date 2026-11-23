@@ -19,13 +19,20 @@ from sqlalchemy import text
 from api.logic import REGION_NAMES, TZ_ABBR, cell_center, local_iso, summarize
 from api.schemas import (BmkgBlock, BmkgForecast, CitySummary, DailyRain, DataRanges, FloodCell, FloodRegion,
                          FloodReport, FloodSummary, Forecast, ForecastRun, ForecastSummary, HourValue, JobStatus,
-                         MapCity, QuarantineCount, RainHistory, SourceStatus, Status, WeatherMap)
+                         MapCity, QuarantineCount, RainHistory, RiskComponent, RiskOverview, RiverDay, RiverSeries,
+                         SourceStatus, Status, WeatherMap, CityRisk)
 from pipeline.config import REPO_ROOT, settings
 from pipeline.db import engine
 from pipeline.locations import PILOT_LOCATIONS
+from pipeline.rainfall import bmkg_category
+from pipeline.risk import FORECAST_SCORE, flood_freq_score, percentile, risk_index, tail_score
+from pipeline.rivers import RIVER_POINTS
 
 log = logging.getLogger(__name__)
 LOCATIONS = {loc.slug: loc for loc in PILOT_LOCATIONS}
+RIVERS = {p.location: p for p in RIVER_POINTS}
+MONTHS = ["", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+RAIN_MIN_HOURS = 60  # hujan 72 jam dianggap ada kalau ≥60 jam tercakup run Open-Meteo
 WINDOW_HOURS = 24
 
 app = FastAPI(
@@ -213,6 +220,134 @@ def floods(days: int = Query(365, ge=1, le=3650), recent: int = Query(12, ge=0, 
     )
 
 
+# ---------------------------------------------------------------------------
+# Indeks risiko banjir (rule-based v1, lihat pipeline/risk.py)
+# ---------------------------------------------------------------------------
+def _fmt(x: float, nd: int = 1) -> str:
+    return f"{x:.{nd}f}".replace(".", ",")
+
+
+def _city_risk(conn, loc, start: datetime, month: int) -> CityRisk:
+    mon = MONTHS[month]
+    comps: list[RiskComponent] = []
+
+    # 1. Hujan 72 jam terakhir (estimasi model) vs jumlah 3 hari ERA5 bulan yang sama.
+    rain = conn.execute(text("""
+        SELECT COUNT(precip_mm) AS n, SUM(precip_mm) AS mm FROM v_rain_recent_est
+        WHERE location = :loc AND valid_at >= :start - INTERVAL '72 hours' AND valid_at < :start
+    """), {"loc": loc.slug, "start": start}).one()
+    ref = conn.execute(text("""
+        SELECT precip_3d_mm::float FROM v_obs_rolling
+        WHERE location = :loc AND EXTRACT(MONTH FROM date) = :m AND precip_3d_mm IS NOT NULL
+    """), {"loc": loc.slug, "m": month}).scalars().all()
+    if rain.n >= RAIN_MIN_HOURS and ref:
+        mm = round(float(rain.mm), 1)
+        p = percentile(mm, ref)
+        comps.append(RiskComponent(
+            key="rain_72h", label="Hujan 72 jam terakhir", source="DATA MODEL CUACA", available=True,
+            score=tail_score(p), weight=None, value=mm, unit="mm", percentile=round(p, 3),
+            detail=f"{_fmt(mm)} mm (estimasi model), persentil {round(p * 100)} untuk 3 hari di bulan {mon}"))
+    else:
+        comps.append(RiskComponent(
+            key="rain_72h", label="Hujan 72 jam terakhir", source="DATA MODEL CUACA", available=False, score=None,
+            weight=None, value=None, unit="mm", percentile=None,
+            detail=f"Hanya {rain.n} dari 72 jam tercakup snapshot prakiraan"))
+
+    # 2. Prakiraan 24 jam ke depan (run Open-Meteo terbaru) → kategori BMKG.
+    runs = _latest_runs(conn, loc.slug)
+    hours = _hours(conn, loc.slug, runs[0], start) if runs else []
+    total = summarize([(t, p) for t, p, _ in hours], None)["total_mm"] if hours else None
+    if total is not None:
+        cat = bmkg_category(total) or "tidak hujan"
+        comps.append(RiskComponent(
+            key="forecast", label="Prakiraan 24 jam", source="DATA MODEL CUACA", available=True,
+            score=FORECAST_SCORE[cat], weight=None, value=total, unit="mm", percentile=None,
+            detail=f"{_fmt(total)} mm, kategori {cat} (skala harian BMKG)"))
+    else:
+        comps.append(RiskComponent(
+            key="forecast", label="Prakiraan 24 jam", source="DATA MODEL CUACA", available=False, score=None,
+            weight=None, value=None, unit="mm", percentile=None, detail="Belum ada run Open-Meteo"))
+
+    # 3. Debit sungai: maksimum hari ini–besok (UTC) vs riwayat bulan yang sama.
+    river = RIVERS.get(loc.slug)
+    q = None
+    if river:
+        q = conn.execute(text("""
+            SELECT MAX(discharge_m3s) FROM river_daily
+            WHERE point = :pt AND date BETWEEN :d AND :d + 1
+        """), {"pt": river.slug, "d": start.date()}).scalar()
+    if q is not None:
+        ref = conn.execute(text("""
+            SELECT discharge_m3s::float FROM river_daily
+            WHERE point = :pt AND NOT is_forecast AND EXTRACT(MONTH FROM date) = :m
+        """), {"pt": river.slug, "m": month}).scalars().all()
+        p = percentile(q, ref)
+        comps.append(RiskComponent(
+            key="river", label=f"Debit {river.river}", source="DATA MODEL CUACA", available=p is not None,
+            score=tail_score(p), weight=None, value=round(q, 1), unit="m³/s",
+            percentile=round(p, 3) if p is not None else None,
+            detail=f"{_fmt(q)} m³/s hari ini–besok (GloFAS), persentil {round(p * 100)} untuk bulan {mon}"
+                   if p is not None else "Riwayat debit belum ada"))
+    else:
+        comps.append(RiskComponent(
+            key="river", label="Debit sungai", source="DATA MODEL CUACA", available=False, score=None, weight=None,
+            value=None, unit="m³/s", percentile=None, detail="Data debit GloFAS belum dimuat"))
+
+    # 4. Frekuensi banjir historis (hanya di cakupan laporan PetaBencana).
+    ff = conn.execute(text("SELECT flood_days, season_days, freq::float AS freq FROM v_flood_season_freq WHERE location = :loc"),
+                      {"loc": loc.slug}).one_or_none()
+    if ff:
+        comps.append(RiskComponent(
+            key="flood_freq", label="Riwayat laporan banjir", source="LAPORAN WARGA", available=True,
+            score=flood_freq_score(ff.freq), weight=None, value=round(ff.freq, 4), unit="proporsi hari",
+            percentile=None,
+            detail=f"{ff.flood_days} dari {ff.season_days} hari musim hujan 2017–2025 ada laporan ≤5 km"))
+    else:
+        comps.append(RiskComponent(
+            key="flood_freq", label="Riwayat laporan banjir", source="LAPORAN WARGA", available=False, score=None,
+            weight=None, value=None, unit="proporsi hari", percentile=None,
+            detail="Laporan warga PetaBencana baru dikumpulkan untuk Jabodetabek"))
+
+    result = risk_index({c.key: c.score for c in comps})
+    for c in comps:
+        c.weight = round(result["weights"].get(c.key), 3) if c.key in result["weights"] else None
+    return CityRisk(slug=loc.slug, city=loc.city, score=result["score"], level=result["level"],
+                    method_version=result["method_version"], components=comps)
+
+
+@app.get("/api/risk", response_model=RiskOverview, tags=["Risiko"])
+def risk() -> RiskOverview:
+    """Indeks risiko banjir rule-based (0–100, Rendah/Sedang/Tinggi) per kota, dengan rincian komponen."""
+    start = _window_start()
+    month = datetime.now(ZoneInfo("Asia/Jakarta")).month
+    with engine.connect() as conn:
+        cities = [_city_risk(conn, loc, start, month) for loc in PILOT_LOCATIONS]
+    return RiskOverview(computed_at=local_iso(datetime.now(timezone.utc), "Asia/Jakarta"), month=month, cities=cities)
+
+
+@app.get("/api/river/{slug}", response_model=RiverSeries, tags=["Risiko"])
+def river(slug: str, days: int = Query(60, ge=7, le=3650)) -> RiverSeries:
+    """Debit harian GloFAS titik sungai kota: riwayat `days` hari + prakiraan, dengan median & p90 bulan ini."""
+    loc = _location(slug)
+    pt = RIVERS[slug]
+    month = datetime.now(ZoneInfo("Asia/Jakarta")).month
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT date, discharge_m3s, is_forecast FROM river_daily
+            WHERE point = :pt AND date > CURRENT_DATE - :n ORDER BY date
+        """), {"pt": pt.slug, "n": days}).all()
+        q = conn.execute(text("""
+            SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY discharge_m3s) AS p50,
+                   percentile_cont(0.9) WITHIN GROUP (ORDER BY discharge_m3s) AS p90
+            FROM river_daily WHERE point = :pt AND NOT is_forecast AND EXTRACT(MONTH FROM date) = :m
+        """), {"pt": pt.slug, "m": month}).one()
+    r1 = lambda x: round(x, 1) if x is not None else None  # noqa: E731
+    return RiverSeries(slug=slug, city=loc.city, point=pt.slug, river=pt.river, lat=pt.lat, lon=pt.lon,
+                       confidence=pt.confidence, note=pt.note, month_p50_m3s=r1(q.p50), month_p90_m3s=r1(q.p90),
+                       days=[RiverDay(date=r.date.isoformat(), discharge_m3s=round(r.discharge_m3s, 2),
+                                      is_forecast=r.is_forecast) for r in rows])
+
+
 @app.get("/api/status", response_model=Status, tags=["Status"])
 def status() -> Status:
     """Kesegaran tiap sumber, job pipeline terakhir, dan isi karantina."""
@@ -226,6 +361,7 @@ def status() -> Status:
         quarantine = conn.execute(text(
             "SELECT job, reason, COUNT(*) AS n FROM quarantine GROUP BY job, reason ORDER BY job, n DESC")).all()
         era5_last = conn.execute(text("SELECT MAX(date) FROM obs_daily WHERE dataset = 'era5'")).scalar()
+        river_last = conn.execute(text("SELECT MAX(date) FROM river_daily WHERE NOT is_forecast")).scalar()
         fl = conn.execute(text("""
             SELECT MAX(created_at) FILTER (WHERE exclusion_reason IS NULL) AS last_at,
                    COUNT(*) FILTER (WHERE exclusion_reason IS NULL) AS used,
@@ -242,6 +378,7 @@ def status() -> Status:
                         rows_rejected=j.rows_rejected, detail=j.detail) for j in jobs],
         quarantine=[QuarantineCount(job=q.job, reason=q.reason[:160], n=q.n) for q in quarantine],
         ranges=DataRanges(era5_last_date=era5_last.isoformat() if era5_last else None,
+                          river_last_date=river_last.isoformat() if river_last else None,
                           flood_last_report_at=local_iso(fl.last_at, tz),
                           flood_reports_used=fl.used, flood_reports_excluded=fl.excluded),
     )
@@ -262,7 +399,7 @@ def refresh(background: BackgroundTasks, full: bool = False) -> dict:
     """Jalankan pipeline di latar belakang. Default: snapshot + prakiraan; `full=true`: semua job."""
     from pipeline.run import main as run_pipeline
 
-    jobs = ["all"] if full else ["sync", "raw", "forecasts", "views"]
+    jobs = ["all"] if full else ["sync", "raw", "forecasts", "rivers", "views"]
     background.add_task(run_pipeline, jobs)
     return {"accepted": True, "jobs": jobs, "at": datetime.now(ZoneInfo("Asia/Jakarta")).isoformat()}
 

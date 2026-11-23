@@ -145,6 +145,35 @@ button { font: inherit; color: inherit; }
 .feed div { padding: 12px 0; border-top: 1px solid var(--rule); font-size: 14.5px; display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 10px; }
 .feed time { color: var(--src-warga); font-weight: 700; font-size: 13px; line-height: 1.35; }
 .feed small { display: block; color: var(--ink-3); font-size: 12.5px; }
+/* indeks risiko: papan duga + komponen + debit sungai */
+.risk-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 8px 24px; }
+.risk-head h2 { font-size: clamp(36px, 4.4vw, 60px); font-weight: 800; line-height: .95; }
+.risk-head p { color: var(--ink-2); margin-top: 10px; max-width: 64ch; }
+.risk { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.05fr); gap: 32px 48px; align-items: start; margin-top: 26px; }
+.gauge-wrap { display: flex; gap: 18px; align-items: flex-end; }
+.gauge svg { display: block; overflow: visible; }
+.score { display: flex; flex-direction: column; gap: 8px; padding-bottom: 4px; }
+.score strong { font-family: var(--display); font-size: clamp(84px, 9vw, 120px); font-weight: 900; line-height: .8; }
+.score small { font-size: 13px; color: var(--ink-3); max-width: 16ch; }
+.lvl { display: inline-flex; align-items: center; gap: 8px; font-family: var(--display); font-size: 30px; font-weight: 800; line-height: 1; }
+.lvl::before { content: ""; width: 14px; height: 14px; border-radius: 3px; background: var(--lv, var(--ink-3)); }
+.lv-Rendah { --lv: var(--low); } .lv-Sedang { --lv: var(--mid); } .lv-Tinggi { --lv: var(--high); }
+.comp { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; padding: 12px 0; border-top: 1px solid var(--rule); }
+.comp .cl { font-weight: 700; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.comp .pts { font-family: var(--display); font-size: 26px; font-weight: 800; line-height: 1; text-align: right; }
+.comp .pts small { font-family: var(--text); font-size: 12px; font-weight: 400; color: var(--ink-3); display: block; }
+.comp .track { grid-column: 1 / -1; height: 6px; background: rgba(231,237,240,.07); border-radius: 3px; position: relative; }
+.comp .track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink-2); border-radius: 3px; }
+.comp p { grid-column: 1 / -1; font-size: 13.5px; color: var(--ink-2); }
+.comp.off { opacity: .55; }
+.comp.off .pts { color: var(--ink-3); font-size: 15px; font-family: var(--text); font-weight: 400; }
+.river-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; }
+.river-head h3 { font-size: 24px; font-weight: 700; }
+#river svg { width: 100%; height: auto; display: block; overflow: visible; }
+.river-note { font-size: 13px; color: var(--ink-3); margin-top: 8px; }
+.risk-foot { font-size: 13px; color: var(--ink-3); margin-top: 18px; max-width: 110ch; }
+.city-row .rl { font-size: 12.5px; display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); }
+.city-row .rl::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--lv, var(--ink-3)); }
 .tip { position: absolute; z-index: 5; pointer-events: none; background: var(--ink); color: var(--sky); font-size: 13px; padding: 8px 11px; border-radius: 4px; max-width: 260px; line-height: 1.4; }
 
 /* ================= PETA ================= */
@@ -232,6 +261,10 @@ td.r, th.r { text-align: right; }
 .qlist small { display: block; color: var(--ink-3); }
 footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size: 13px; color: var(--ink-3); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; }
 
+@media (max-width: 1100px) {
+  .risk { grid-template-columns: auto minmax(0, 1fr); }
+  .risk > .river-box { grid-column: 1 / -1; }
+}
 @media (max-width: 1000px) {
   .hero, .flood-grid, .two, .layer-notes { grid-template-columns: minmax(0, 1fr); }
   .others { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -246,6 +279,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
   .ask-fab { padding: 14px; }
   .ticks { margin-inline: 0; }
   .scale-labels { font-size: 10.5px; }
+  .risk { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
 </head>
@@ -342,10 +376,34 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
 <main class="wrap">
   <!-- ================= DASBOR (di bawah garis air) ================= -->
   <section class="below" data-view-body="dasbor">
+    <div>
+      <div class="risk-head">
+        <div>
+          <h2 id="riskTitle">Risiko banjir</h2>
+          <p>Gabungan hujan 72 jam terakhir, prakiraan 24 jam, debit sungai, dan riwayat laporan banjir. Angka 0–100 ini hitungan SIAGA NUSA dari aturan yang terbuka, <b>bukan status siaga resmi</b> BMKG atau BPBD.</p>
+        </div>
+        <span class="tag t-pred" id="riskTag"><b>Indeks SIAGA NUSA</b> rule-based v1</span>
+      </div>
+      <div class="risk" id="risk">
+        <div class="gauge-wrap">
+          <div class="gauge" id="gauge"></div>
+          <div class="score"><strong id="riskScore">–</strong><span class="lvl" id="riskLevel">Memuat…</span><small id="riskWhen"></small></div>
+        </div>
+        <div id="riskComps"></div>
+        <div class="river-box">
+          <div class="river-head"><h3 id="riverTitle">Debit sungai</h3><span class="tag t-model" id="riverTag"><b>GloFAS</b></span></div>
+          <div class="readout" id="riverReadout"></div>
+          <div id="river"></div>
+          <p class="river-note" id="riverNote"></p>
+        </div>
+      </div>
+      <p class="risk-foot">Rendah &lt;40 · Sedang 40–69 · Tinggi ≥70. Hujan dan debit dibandingkan dengan riwayat bulan yang sama; hanya kondisi di atas median yang menambah poin. Komponen tanpa data tidak dihitung dan bobotnya dibagi ke komponen lain. Uji ke belakang (Jakarta 2017–2025): hari berskor Tinggi 6× lebih sering disertai banjir luas daripada hari Rendah, tetapi banyak banjir lokal tidak tertangkap.</p>
+    </div>
+
     <div class="flood-head">
       <div>
         <h2>Banjir di Jabodetabek menurut laporan warga</h2>
-        <p>Indeks risiko banjir (hujan tiga hari, prakiraan, debit sungai, riwayat) menyusul setelah data debit GloFAS masuk. Sementara ini peta menunjukkan seberapa sering warga melaporkan banjir di tiap sel dalam 12 bulan terakhir.</p>
+        <p>Seberapa sering warga melaporkan banjir di tiap sel dalam 12 bulan terakhir. Riwayat inilah yang menjadi komponen keempat indeks risiko untuk Jakarta dan Bogor.</p>
       </div>
       <div class="count" id="floodCount"></div>
     </div>
@@ -414,7 +472,8 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
         <h3 class="h3">Model</h3>
         <ul class="qlist">
           <li><strong style="color:var(--ink-3)">A</strong><span>Prediksi hujan ≥20 mm besok<small>Label sudah ada (ERA5 ≥20 mm/hari). Belum dilatih.</small></span></li>
-          <li><strong style="color:var(--ink-3)">B</strong><span>Peluang laporan banjir per sel H+1<small>Menunggu uji kelayakan data dan data debit GloFAS.</small></span></li>
+          <li><strong style="color:var(--ink-3)">B</strong><span>Peluang laporan banjir per sel H+1<small>Menunggu uji kelayakan data.</small></span></li>
+          <li><strong style="color:var(--src-pred)">R</strong><span>Indeks risiko banjir rule-based v1<small>Aktif. Empat komponen berbobot, tanpa ML. Rumus di pipeline/risk.py.</small></span></li>
         </ul>
       </div>
     </div>
@@ -422,7 +481,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
 
   <footer>
     <span>Kelompok Blast Off · Final Project AI Engineer, Digital Skola × Microsoft Azure</span>
-    <span>Data: BMKG · Open-Meteo (CC BY 4.0) · PetaBencana.id · Bukan sistem peringatan dini resmi</span>
+    <span>Data: BMKG · Open-Meteo (CC BY 4.0) · GloFAS/Copernicus · PetaBencana.id · Bukan sistem peringatan dini resmi</span>
   </footer>
 </main>
 <div class="tip" id="tip" hidden></div>
@@ -512,7 +571,141 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
 
   const bounds = [0.5, 20, 50, 100, 150, 250];
   const scalePos = (mm) => { if (mm == null || mm < 0.5) return 0; for (let i = 0; i < 5; i++) if (mm < bounds[i + 1]) return (i + (mm - bounds[i]) / (bounds[i + 1] - bounds[i])) / 5; return 1; };
-  let cities = [], sel = 0, intensity = 0.4;
+  let cities = [], sel = 0, intensity = 0.4, risk = {}, riskAt = null;
+  const MONTHS = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const LEVEL_VAR = { Rendah: '--low', Sedang: '--mid', Tinggi: '--high' };
+
+  /* ---------- indeks risiko: papan duga ---------- */
+  // Papan duga (peilschaal) 0–100: air naik sampai skor, pita level di sisi kanan.
+  function renderGauge(score) {
+    const host = $('#gauge'); host.innerHTML = '';
+    const W = 96, H = 280, top = 8, bot = 8, x0 = 30, sw = 30;
+    const Y = (v) => top + (100 - v) / 100 * (H - top - bot);
+    const s = el('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': score == null ? 'Indeks risiko belum tersedia' : `Papan duga indeks risiko: ${score} dari 100` }, host);
+    el('rect', { x: x0, y: Y(100), width: sw, height: Y(0) - Y(100), fill: css('--paper'), 'fill-opacity': .1, rx: 2 }, s);
+    for (let v = 0; v <= 100; v += 5) {
+      const major = v % 10 === 0;
+      el('rect', { x: x0, y: Y(v) - 1, width: major ? sw : sw * .55, height: 2, fill: css('--ink'), 'fill-opacity': major ? .55 : .3 }, s);
+      if (major) { const t = el('text', { x: x0 - 6, y: Y(v) + 4, 'text-anchor': 'end', 'font-size': 11, fill: css('--ink-3') }, s); t.textContent = v; }
+    }
+    // pita level
+    [[0, 40, '--low'], [40, 70, '--mid'], [70, 100, '--high']].forEach(([a, b, c]) => el('rect', { x: x0 + sw + 3, y: Y(b) + 1, width: 5, height: Y(a) - Y(b) - 2, fill: css(c), rx: 2 }, s));
+    [[40, 'Sedang'], [70, 'Tinggi']].forEach(([v, nm]) => { const t = el('text', { x: x0 + sw + 12, y: Y(v) + 4, 'font-size': 11, fill: css('--ink-2') }, s); t.textContent = nm; });
+    const t0 = el('text', { x: x0 + sw + 12, y: Y(0) - 2, 'font-size': 11, fill: css('--ink-2') }, s); t0.textContent = 'Rendah';
+    if (score == null) return;
+    // air: permukaan bergelombang tipis di skor
+    const yw = Y(score), xa = 2, xb = x0 + sw + 2;
+    let d = `M${xa},${yw}`;
+    for (let x = xa; x <= xb; x += 4) d += ` L${x},${yw + Math.sin(x / 4) * 1.6}`;
+    d += ` L${xb},${Y(0)} L${xa},${Y(0)} Z`;
+    el('path', { d, fill: css('--rain'), 'fill-opacity': .32 }, s);
+    el('line', { x1: xa, x2: xb, y1: yw, y2: yw, stroke: css('--rain'), 'stroke-width': 2 }, s);
+  }
+
+  function renderRisk(slug) {
+    const r = risk[slug];
+    const c = cities.find((k) => k.slug === slug);
+    $('#riskTitle').textContent = `Risiko banjir ${c ? c.city : ''}`;
+    if (!r) {
+      renderGauge(null);
+      $('#riskScore').textContent = '–'; $('#riskLevel').textContent = 'Belum tersedia'; $('#riskLevel').className = 'lvl';
+      $('#riskComps').innerHTML = '<p class="muted">Indeks risiko belum bisa dihitung.</p>';
+      return;
+    }
+    renderGauge(r.score);
+    $('#riskScore').textContent = r.score ?? '–';
+    $('#riskLevel').textContent = r.level || 'Belum tersedia';
+    $('#riskLevel').className = 'lvl' + (r.level ? ' lv-' + r.level : '');
+    $('#riskWhen').textContent = riskAt ? `dihitung ${hhmm(riskAt)} WIB dari 100` : 'dari 100';
+    $('#riskTag').innerHTML = `<b>Indeks SIAGA NUSA</b> rule-based ${esc(r.method_version.replace('risk-', ''))}`;
+    const tagCls = { 'DATA MODEL CUACA': 't-model', 'LAPORAN WARGA': 't-warga' };
+    const tagTxt = { rain_72h: 'Open-Meteo', forecast: 'Open-Meteo', river: 'GloFAS', flood_freq: 'PetaBencana' };
+    $('#riskComps').innerHTML = r.components.map((k) => {
+      const tag = `<span class="tag ${tagCls[k.source] || ''}"><b>${tagTxt[k.key] || ''}</b></span>`;
+      if (!k.available) return `<div class="comp off"><span class="cl">${esc(k.label)} ${tag}</span><span class="pts">tidak dihitung</span><p>${esc(k.detail)}</p></div>`;
+      const max = Math.round(k.weight * 100), pts = Math.round(k.weight * k.score * 100);
+      return `<div class="comp"><span class="cl">${esc(k.label)} ${tag}</span>` +
+        `<span class="pts">+${pts}<small>dari maks ${max} poin</small></span>` +
+        `<span class="track" role="img" aria-label="${pts} dari ${max} poin"><i style="width:${k.score * 100}%"></i></span>` +
+        `<p>${esc(k.detail)}</p></div>`;
+    }).join('');
+  }
+
+  /* ---------- debit sungai: riwayat + prakiraan, pita normal bulan ini ---------- */
+  async function loadRiver(slug) {
+    $('#river').innerHTML = ''; $('#riverReadout').textContent = '';
+    let rv;
+    try { rv = await api(`/api/river/${slug}?days=45`); } catch (e) { $('#riverNote').textContent = 'Data debit belum tersedia.'; return; }
+    if (cities[sel] && cities[sel].slug !== slug) return;
+    $('#riverTitle').textContent = `Debit ${rv.river}`;
+    const last = rv.days.filter((d) => !d.is_forecast).pop();
+    $('#riverTag').innerHTML = `<b>GloFAS</b> ${last ? 's.d. ' + shortDate(last.date + 'T12:00:00+07:00') : ''} + prakiraan`;
+    $('#riverNote').textContent = `Sel GloFAS ${fmt(rv.lat, 3)}, ${fmt(rv.lon, 3)} · keyakinan sel ${rv.confidence}. ${rv.note || ''} Angka model, bukan pengukuran pos duga air.`;
+    drawRiver(rv);
+  }
+
+  let riverData = null;
+  function drawRiver(rv) {
+    riverData = rv;
+    const host = $('#river'), ro = $('#riverReadout'); host.innerHTML = '';
+    const days = rv.days; if (!days.length) return;
+    // Lebar viewBox = lebar kolom, supaya teks 12px tetap 12px di layar.
+    const W = Math.max(280, Math.round(host.clientWidth || 440)), H = 220, L = 40, R = 8, T = 22, B = 26;
+    const vals = days.map((d) => d.discharge_m3s);
+    const maxV = Math.max(...vals, rv.month_p90_m3s || 0) * 1.12;
+    const niceStep = [5, 10, 20, 25, 50, 100, 200, 500].find((st) => maxV / st <= 5) || 1000;
+    const yMax = Math.ceil(maxV / niceStep) * niceStep;
+    const X = (i) => L + i / Math.max(1, days.length - 1) * (W - L - R);
+    const Y = (v) => T + (1 - v / yMax) * (H - T - B);
+    const s = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `Debit harian ${rv.river}, ${days.length} hari termasuk prakiraan` }, host);
+    for (let v = 0; v <= yMax; v += niceStep) {
+      el('line', { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: css('--ink'), 'stroke-opacity': v === 0 ? .25 : .07 }, s);
+      const t = el('text', { x: L - 8, y: Y(v) + 4, 'text-anchor': 'end', 'font-size': 12, fill: css('--ink-3') }, s); t.textContent = v;
+    }
+    const u = el('text', { x: L - 8, y: T - 12, 'text-anchor': 'end', 'font-size': 11, fill: css('--ink-3') }, s); u.textContent = 'm³/s';
+    // pita normal bulan berjalan (median–p90)
+    if (rv.month_p50_m3s != null && rv.month_p90_m3s != null) {
+      el('rect', { x: L, y: Y(rv.month_p90_m3s), width: W - L - R, height: Y(rv.month_p50_m3s) - Y(rv.month_p90_m3s), fill: css('--rain'), 'fill-opacity': .1 }, s);
+      el('line', { x1: L, x2: W - R, y1: Y(rv.month_p50_m3s), y2: Y(rv.month_p50_m3s), stroke: css('--rain'), 'stroke-opacity': .35, 'stroke-dasharray': '2 4' }, s);
+      const bl = el('text', { x: L + 6, y: Y(rv.month_p90_m3s) - 6, 'font-size': 12, fill: css('--ink-2') }, s);
+      bl.textContent = `normal ${MONTHS[new Date().getMonth() + 1]} (median–p90, 2010–2025)`;
+    }
+    const fi = days.findIndex((d) => d.is_forecast);
+    const hist = days.map((d, i) => [i, d]).filter(([, d]) => !d.is_forecast);
+    const fc = fi >= 0 ? days.map((d, i) => [i, d]).filter(([i]) => i >= Math.max(0, fi - 1)) : [];
+    const line = (pts) => 'M' + pts.map(([i, d]) => `${X(i).toFixed(1)},${Y(d.discharge_m3s).toFixed(1)}`).join(' L');
+    if (fi >= 0) {
+      el('line', { x1: X(fi), x2: X(fi), y1: T, y2: H - B, stroke: css('--ink-2'), 'stroke-opacity': .5 }, s);
+      const tl = el('text', { x: X(fi) - 5, y: T - 8, 'text-anchor': 'end', 'font-size': 12, fill: css('--ink-2') }, s); tl.textContent = 'prakiraan →';
+    }
+    if (hist.length) el('path', { d: line(hist), fill: 'none', stroke: css('--rain'), 'stroke-width': 2, 'stroke-linejoin': 'round' }, s);
+    if (fc.length > 1) el('path', { d: line(fc), fill: 'none', stroke: css('--rain'), 'stroke-width': 2, 'stroke-dasharray': '5 4', 'stroke-linejoin': 'round' }, s);
+    const every = W < 400 ? 14 : W < 560 ? 10 : 7;  // ±1 label per 80–90 px
+    days.forEach((d, i) => {
+      const lastTick = i === days.length - 1;
+      if (i % every !== 0 && !lastTick) return;
+      if (!lastTick && days.length - 1 - i < every * .6) return;  // jangan bertumpuk dengan label terakhir
+      const t = el('text', { x: X(i), y: H - 6, 'text-anchor': i === 0 ? 'start' : i === days.length - 1 ? 'end' : 'middle', 'font-size': 12, fill: css('--ink-3') }, s);
+      t.textContent = shortDate(d.date + 'T12:00:00+07:00');
+    });
+    // lapisan hover: garis bantu + titik + angka
+    const cross = el('line', { y1: T, y2: H - B, stroke: css('--ink'), 'stroke-opacity': .35, visibility: 'hidden' }, s);
+    const dot = el('circle', { r: 4.5, fill: css('--rain'), stroke: css('--water'), 'stroke-width': 2, visibility: 'hidden' }, s);
+    const hit = el('rect', { x: L, y: 0, width: W - L - R, height: H, fill: 'transparent' }, s);
+    const base = 'Arahkan kursor ke grafik untuk angka per hari.';
+    ro.textContent = base;
+    hit.addEventListener('mousemove', (e) => {
+      const b = s.getBoundingClientRect();
+      const px = (e.clientX - b.left) / b.width * W;
+      const i = Math.max(0, Math.min(days.length - 1, Math.round((px - L) / (W - L - R) * (days.length - 1))));
+      const d = days[i];
+      cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i)); cross.setAttribute('visibility', 'visible');
+      dot.setAttribute('cx', X(i)); dot.setAttribute('cy', Y(d.discharge_m3s)); dot.setAttribute('visibility', 'visible');
+      const rel = rv.month_p50_m3s ? ` · ${d.discharge_m3s >= rv.month_p90_m3s ? 'di atas p90 bulan ini' : d.discharge_m3s >= rv.month_p50_m3s ? 'di atas median bulan ini' : 'di bawah median bulan ini'}` : '';
+      ro.textContent = `${shortDate(d.date + 'T12:00:00+07:00')}: ${fmt(d.discharge_m3s)} m³/s${d.is_forecast ? ' (prakiraan)' : ''}${rel}`;
+    });
+    hit.addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); ro.textContent = base; });
+  }
 
   /* ---------- kesegaran data (badge) ---------- */
   function renderFresh(st) {
@@ -529,7 +722,8 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     }
     const r = st.ranges;
     b.push(badge('ERA5', r.era5_last_date ? `s.d. ${shortDate(r.era5_last_date + 'T12:00:00+07:00')} · tertinggal ±5 hari` : 'belum ada', '', 'Reanalysis; dipakai untuk akumulasi hujan dan label Model A'));
-    b.push(badge('PetaBencana', r.flood_last_report_at ? `laporan banjir terakhir ${shortDate(r.flood_last_report_at)}` : 'belum ada', ageH(r.flood_last_report_at) > 72 ? 'stale' : ''));
+    b.push(badge('GloFAS', r.river_last_date ? `s.d. ${shortDate(r.river_last_date + 'T12:00:00+07:00')} + prakiraan 7 hari` : 'belum ada', r.river_last_date ? '' : 'off', 'Debit sungai harian (model), komponen indeks risiko'));
+    b.push(badge('PetaBencana',r.flood_last_report_at ? `laporan banjir terakhir ${shortDate(r.flood_last_report_at)}` : 'belum ada', ageH(r.flood_last_report_at) > 72 ? 'stale' : ''));
     b.push(badge('Peringatan dini BMKG', 'belum tersambung', 'off'));
     $('#fresh').innerHTML = `<span class="fresh-label">Data terakhir masuk</span>${b.join('')}`;
   }
@@ -589,6 +783,8 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
 
     intensity = Math.min(1.4, 0.12 + (s.total_mm || 0) / 45);
     drawCurtain(f);
+    renderRisk(c.slug);
+    loadRiver(c.slug);
   }
 
   /* ---------- tirai hujan: batang menggantung dari awan ---------- */
@@ -638,7 +834,8 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     $('#others').innerHTML = cities.map((c) => `<button type="button" class="city-row" aria-label="${esc(c.city)}, ${fmt(c.total_24h_mm)} mm">
         <span class="cn">${esc(c.city)}</span><span class="mm">${fmt(c.total_24h_mm)}<small>mm</small></span>
         <span class="mini"><i></i><i></i><i></i><i></i><i></i><span class="dot" style="left:${scalePos(c.total_24h_mm) * 100}%"></span></span>
-        <span class="sub">${c.category ? cap(c.category === 'tidak hujan' ? 'tidak hujan' : 'hujan ' + c.category) : 'Belum ada data'}${c.peak_at ? ` · puncak ${hhmm(c.peak_at)} ${c.tz_abbr}` : ''}</span></button>`).join('');
+        <span class="sub">${c.category ? cap(c.category === 'tidak hujan' ? 'tidak hujan' : 'hujan ' + c.category) : 'Belum ada data'}${c.peak_at ? ` · puncak ${hhmm(c.peak_at)} ${c.tz_abbr}` : ''}</span>
+        ${risk[c.slug] && risk[c.slug].level ? `<span class="sub"><span class="rl" style="--lv:var(${LEVEL_VAR[risk[c.slug].level]})">Risiko banjir ${risk[c.slug].level} · ${risk[c.slug].score}</span></span>` : ''}</button>`).join('');
     document.querySelectorAll('.city-row .mini').forEach((m) => m.querySelectorAll('i').forEach((i, n) => { i.style.opacity = shade[n] * .5; }));
     document.querySelectorAll('#cityTabs button').forEach((b, i) => b.addEventListener('click', () => selectCity(i)));
     document.querySelectorAll('.city-row').forEach((b, i) => b.addEventListener('click', () => { selectCity(i); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
@@ -704,6 +901,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     });
     const r = st.ranges;
     rows.push(`<tr><td><span class="state st-ok"></span>ERA5 harian</td><td>s.d. ${r.era5_last_date ? shortDate(r.era5_last_date + 'T12:00:00+07:00') : '–'}</td><td class="r">8 dari 8</td><td class="r">–</td><td class="muted">Reanalysis, normal tertinggal ±5 hari</td></tr>`);
+    rows.push(`<tr><td><span class="state ${r.river_last_date ? 'st-ok' : 'st-warn'}"></span>GloFAS debit sungai</td><td>s.d. ${r.river_last_date ? shortDate(r.river_last_date + 'T12:00:00+07:00') : '–'}</td><td class="r">8 titik</td><td class="r">–</td><td class="muted">Model hidrologi harian (hari UTC) + prakiraan 7 hari, lewat Open-Meteo Flood API</td></tr>`);
     rows.push(`<tr><td><span class="state ${r.flood_last_report_at ? 'st-ok' : 'st-warn'}"></span>PetaBencana</td><td>${r.flood_last_report_at ? shortDate(r.flood_last_report_at) + ', ' + hhmm(r.flood_last_report_at) + ' WIB' : '–'}<br><small class="muted">laporan banjir Jabodetabek terakhir</small></td><td class="r">–</td><td class="r">–</td><td class="muted">${r.flood_reports_used.toLocaleString('id-ID')} dipakai, ${r.flood_reports_excluded.toLocaleString('id-ID')} disaring (2016–sekarang)</td></tr>`);
     rows.push(`<tr><td><span class="state st-off"></span>BMKG peringatan dini</td><td>–</td><td class="r">–</td><td class="r">–</td><td class="muted">Belum tersambung</td></tr>`);
     $('#srcBody').innerHTML = rows.join('');
@@ -830,6 +1028,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
       `<b>${fmt(c.total_24h_mm)} mm</b> dalam 24 jam${c.category ? ` (${c.category === 'tidak hujan' ? 'tidak hujan' : 'hujan ' + c.category})` : ''}<br>` +
       `Pukul ${hhmm(h.valid_at)} ${c.tz_abbr}: ${fmt(h.precip_mm)} mm/jam${h.precip_prob_pct != null ? `, peluang ${Math.round(h.precip_prob_pct)}%` : ''}<br>` +
       `<span style="color:var(--src-resmi)">BMKG sekarang:</span> ${esc(c.bmkg_now || '–')}<br>` +
+      (risk[c.slug] && risk[c.slug].level ? `<span style="color:var(--src-pred)">Indeks risiko banjir:</span> ${risk[c.slug].level} (${risk[c.slug].score}/100)<br>` : '') +
       `<button class="pbtn" type="button" data-slug="${c.slug}">Buka di dasbor</button>`;
   }
   function setHour(i) {
@@ -875,6 +1074,8 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
       $('#radarNote').textContent = 'Radar RainViewer tidak bisa dimuat saat ini, jadi lapisan ini dimatikan.';
     }
   }
+  let riverResize;
+  window.addEventListener('resize', () => { clearTimeout(riverResize); riverResize = setTimeout(() => { if (riverData) drawRiver(riverData); }, 150); });
   $('#hourSlider').addEventListener('input', (e) => { if (wx && wx.data) setHour(+e.target.value); });
   $('#playBtn').addEventListener('click', () => {
     if (!wx || !wx.data) return;
@@ -927,8 +1128,10 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
   async function load() {
     if (location.protocol === 'file:') { showError('Buka lewat server API: uvicorn api.main:app --port 8010, lalu http://localhost:8010/'); return; }
     try {
-      const [cs, st] = await Promise.all([api('/api/cities'), api('/api/status')]);
+      // Indeks risiko boleh gagal tanpa menjatuhkan dasbor.
+      const [cs, st, rk] = await Promise.all([api('/api/cities'), api('/api/status'), api('/api/risk').catch(() => null)]);
       cities = cs;
+      if (rk) { risk = Object.fromEntries(rk.cities.map((r) => [r.slug, r])); riskAt = rk.computed_at; }
       renderCities(); renderFresh(st); renderStatus(st);
       const jakarta = Math.max(0, cities.findIndex((c) => c.slug === 'jakarta'));
       await selectCity(sel || jakarta);

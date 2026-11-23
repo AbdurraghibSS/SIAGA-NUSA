@@ -11,6 +11,7 @@ Job:
   forecasts  ETL: bersihkan BMKG & Open-Meteo di pandas lalu muat
   history    ETL: hujan harian ERA5 dari data/raw/open-meteo
   floods     ETL: laporan banjir PetaBencana dari data/raw/petabencana
+  rivers     ETL: debit sungai GloFAS (riwayat per tahun + 14 hari terakhir + prakiraan 7 hari)
   views      transformasi SQL (view analitik)
 Semua job idempotent: menjalankan ulang tidak membuat baris ganda.
 """
@@ -21,15 +22,18 @@ import sys
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 from sqlalchemy import text
 
 from pipeline import db
 from pipeline.config import settings
-from pipeline.ingest import openmeteo, petabencana
+from pipeline.ingest import glofas, openmeteo, petabencana
 from pipeline.ingest.http import make_session
 from pipeline.locations import PILOT_LOCATIONS
+from pipeline.rivers import RIVER_POINTS
 from pipeline.sync import sync_snapshots
 from pipeline.transform.floods import flood_frame
+from pipeline.transform.rivers import glofas_files_frame, glofas_items_frame
 from pipeline.transform.forecast import (bmkg_frame, era5_frame, era5_items_frame, openmeteo_frame,
                                          raw_payload_frame, read_envelopes)
 
@@ -130,6 +134,29 @@ def job_floods() -> None:
         run.detail = f"{len(floods)} laporan banjir Jabodetabek, {n_excluded} ditandai latihan/uji/ledakan"
 
 
+def job_rivers() -> None:
+    """Debit GloFAS: riwayat per tahun dari file (ditarik sekali), lalu hari terakhir + prakiraan.
+
+    Nilai beberapa hari terakhir dan prakiraan berubah tiap hari, jadi baris yang sudah
+    ada diperbarui (`update`), bukan dilewati.
+    """
+    with db.JobRun("rivers_glofas") as run:
+        session = make_session()
+        today = datetime.now(ZoneInfo("UTC")).date()
+        history_dir = settings.raw_dir / "glofas"
+        glofas.backfill(session, RIVER_POINTS, history_dir, today)
+        history, rejects = glofas_files_frame(list(history_dir.glob("daily_*.json")), RIVER_POINTS, today)
+        recent, bad = glofas_items_frame(glofas.fetch_recent(session, RIVER_POINTS), RIVER_POINTS, today)
+        # Angka terbaru menang untuk tanggal yang sama.
+        df = pd.concat([history, recent]).drop_duplicates(["point", "date"], keep="last")
+        run.read = len(history) + len(recent)
+        run.loaded = db.load_dataframe(df, "river_daily", ("point", "date"), update=("discharge_m3s", "is_forecast"))
+        rejects = pd.concat([rejects, bad])
+        run.rejected = len(rejects)
+        db.quarantine("rivers_glofas", rejects)
+        run.detail = f"{len(RIVER_POINTS)} titik, {df['date'].min()} s.d. {df['date'].max()} (prakiraan sejak {today})"
+
+
 def job_views() -> None:
     with db.JobRun("views") as run:
         db.run_sql_file("views.sql")
@@ -143,9 +170,10 @@ JOBS = {
     "forecasts": job_forecasts,
     "history": job_history,
     "floods": job_floods,
+    "rivers": job_rivers,
     "views": job_views,
 }
-ALL = ["init", "sync", "raw", "forecasts", "history", "floods", "views"]
+ALL = ["init", "sync", "raw", "forecasts", "history", "floods", "rivers", "views"]
 
 
 def main(argv: list[str] | None = None) -> int:
