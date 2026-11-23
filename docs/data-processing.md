@@ -100,6 +100,7 @@ Workflow [`snapshot.yml`](../.github/workflows/snapshot.yml) memanggil BMKG (8 k
 |---|---|---|
 | `history` (ERA5) | Backfill dari file arsip 2017–2026, lalu **menyusul hari yang belum ada** lewat API arsip Open-Meteo | ERA5 tertinggal ±5 hari, sehingga API mengembalikan `null` untuk hari terbaru. Hari itu **dibuang, bukan disimpan kosong**: kalau baris kosong sudah tersimpan, `ON CONFLICT DO NOTHING` akan menghalangi angka aslinya masuk nanti |
 | `floods` (PetaBencana) | Arsip **bulan lalu dan bulan ini ditarik ulang** setiap eksekusi, lalu semua arsip lokal dimuat | Laporan yang datang terlambat ikut masuk |
+| `archive` (Previous Runs) | Prakiraan yang terbit **sehari sebelumnya** (`*_previous_day1`) dari 4 model (best_match, ECMWF, GFS, ICON), ditarik per model per tahun sejak Feb 2024, lalu diringkas per hari WIB ke `forecast_archive_daily` | Bukan Historical Forecast API: nilai arsip itu untuk hari H **identik** dengan run hari H sendiri (korelasi 1,000, selisih 0,00 mm), jadi akan membocorkan jawaban ke Model A. Jumlah hujan harian hanya disimpan kalau 24 jamnya lengkap |
 | `rivers` (GloFAS) | Riwayat 2010–sekarang ditarik **per tahun** ke `data/raw/glofas/daily_<tahun>.json` (tahun lampau tidak ditarik ulang), lalu 14 hari terakhir + prakiraan 7 hari | Nilai prakiraan berubah setiap hari, jadi dimuat dengan `ON CONFLICT ... DO UPDATE`. Jawaban 429 (kuota per menit) ditunggu 65 detik |
 
 #### Memilih sel sungai
@@ -380,7 +381,7 @@ docker compose up -d --build             # db + backend (8011) + frontend nginx 
 python -m pipeline.run all               # semua job, berurutan
 python -m pipeline.run forecasts views   # atau job tertentu saja
 # dasbor http://localhost:8010 · dokumentasi API http://localhost:8010/docs
-pytest -q                                # 77 test unit, tanpa database
+pytest -q                                # 81 test unit, tanpa database
 ```
 
 ---
@@ -389,7 +390,7 @@ pytest -q                                # 77 test unit, tanpa database
 
 | Bagian | Status |
 |---|---|
-| Model A (peluang hujan ≥20 mm besok) | Label sudah ada di `v_obs_rolling.is_moderate_plus`; model belum dilatih |
+| Prediksi Model A di dasbor | Model sudah dilatih dan terdaftar (`siaganusa-hujan@champion`, [notebook 04](../notebooks/04_model_a_hujan.ipynb)); job prediksi harian dan tampilan belum |
 | Peringatan dini BMKG (RSS/CAP) | Belum tersambung |
 | Poligon kecamatan (PostGIS) | Wilayah masih memakai kode kab/kota dan sel grid 0,05° |
 | Penjadwal di server | Pipeline masih dijalankan manual atau lewat `POST /api/admin/refresh` |

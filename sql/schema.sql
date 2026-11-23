@@ -5,6 +5,7 @@
 --   forecast_bmkg           ETL: prakiraan resmi BMKG per 3 jam, sudah dibersihkan di pandas
 --   forecast_hourly         ETL: prakiraan Open-Meteo per jam, satu baris per (run, jam)
 --   obs_daily               ETL: hujan harian ERA5 (reanalysis) untuk akumulasi & label Model A
+--   forecast_archive_daily  ETL: prakiraan yang terbit SEHARI SEBELUMNYA (Previous Runs), harian WIB, per model
 --   river_points            titik pantau sungai: satu sel GloFAS per kota pilot
 --   river_daily             ETL: debit harian GloFAS (riwayat + prakiraan) per titik
 --   flood_reports           ETL: laporan banjir PetaBencana Jabodetabek + penanda latihan/uji
@@ -73,6 +74,21 @@ CREATE TABLE IF NOT EXISTS obs_daily (
     dataset    TEXT NOT NULL,                 -- era5 | era5_land
     precip_mm  REAL,
     PRIMARY KEY (location, date, dataset)
+);
+
+CREATE TABLE IF NOT EXISTS forecast_archive_daily (
+    location            TEXT NOT NULL REFERENCES locations(slug),
+    date                DATE NOT NULL,          -- hari WIB 00–24 yang diprakirakan
+    model               TEXT NOT NULL,          -- best_match | ecmwf_ifs025 | gfs_seamless | icon_seamless
+    precip_d0_mm        REAL,                   -- run hari itu sendiri: HANYA untuk hari lampau (bukan fitur besok)
+    precip_d1_mm        REAL,                   -- run ±24 jam sebelumnya
+    precip_d1_max_mm_h  REAL,
+    cape_d1_max         REAL,
+    rh_d1_mean          REAL,
+    cloud_d1_mean       REAL,
+    pressure_d1_mean    REAL,
+    wind_d1_max         REAL,
+    PRIMARY KEY (location, date, model)
 );
 
 CREATE TABLE IF NOT EXISTS river_points (

@@ -11,6 +11,7 @@ Job:
   forecasts  ETL: bersihkan BMKG & Open-Meteo di pandas lalu muat
   history    ETL: hujan harian ERA5 dari data/raw/open-meteo
   floods     ETL: laporan banjir PetaBencana dari data/raw/petabencana
+  archive    ETL: prakiraan terbit sehari sebelumnya (Previous Runs, 4 model) untuk Model A
   rivers     ETL: debit sungai GloFAS (riwayat per tahun + 14 hari terakhir + prakiraan 7 hari)
   views      transformasi SQL (view analitik)
 Semua job idempotent: menjalankan ulang tidak membuat baris ganda.
@@ -27,12 +28,13 @@ from sqlalchemy import text
 
 from pipeline import db
 from pipeline.config import settings
-from pipeline.ingest import glofas, openmeteo, petabencana
+from pipeline.ingest import glofas, openmeteo, petabencana, previous_runs
 from pipeline.ingest.http import make_session
 from pipeline.locations import PILOT_LOCATIONS
 from pipeline.rivers import RIVER_POINTS
 from pipeline.sync import sync_snapshots
 from pipeline.transform.floods import flood_frame
+from pipeline.transform.previous_runs import files_frame as previous_runs_frame
 from pipeline.transform.rivers import glofas_files_frame, glofas_items_frame
 from pipeline.transform.forecast import (bmkg_frame, era5_frame, era5_items_frame, openmeteo_frame,
                                          raw_payload_frame, read_envelopes)
@@ -134,6 +136,24 @@ def job_floods() -> None:
         run.detail = f"{len(floods)} laporan banjir Jabodetabek, {n_excluded} ditandai latihan/uji/ledakan"
 
 
+def job_archive() -> None:
+    """Prakiraan yang terbit sehari sebelumnya (fitur Model A tanpa contekan).
+
+    Tahun berjalan ditarik ulang setiap eksekusi (sampai prakiraan besok), jadi baris
+    yang sudah ada diperbarui.
+    """
+    with db.JobRun("forecast_archive") as run:
+        session = make_session()
+        archive_dir = settings.raw_dir / "open-meteo"
+        previous_runs.backfill(session, PILOT_LOCATIONS, archive_dir, _today_wib() + timedelta(days=1))
+        df = previous_runs_frame(list(archive_dir.glob("previous_runs_*.json")), PILOT_LOCATIONS)
+        run.read = len(df)
+        value_cols = [c for c in df.columns if c not in ("location", "date", "model")]
+        run.loaded = db.load_dataframe(df, "forecast_archive_daily", ("location", "date", "model"), update=tuple(value_cols))
+        run.detail = (f"{df['model'].nunique()} model, {df['date'].min()} s.d. {df['date'].max()}"
+                      if not df.empty else "kosong")
+
+
 def job_rivers() -> None:
     """Debit GloFAS: riwayat per tahun dari file (ditarik sekali), lalu hari terakhir + prakiraan.
 
@@ -170,10 +190,11 @@ JOBS = {
     "forecasts": job_forecasts,
     "history": job_history,
     "floods": job_floods,
+    "archive": job_archive,
     "rivers": job_rivers,
     "views": job_views,
 }
-ALL = ["init", "sync", "raw", "forecasts", "history", "floods", "rivers", "views"]
+ALL = ["init", "sync", "raw", "forecasts", "history", "floods", "archive", "rivers", "views"]
 
 
 def main(argv: list[str] | None = None) -> int:
