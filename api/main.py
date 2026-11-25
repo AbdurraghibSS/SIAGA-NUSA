@@ -20,7 +20,7 @@ from api.logic import REGION_NAMES, TZ_ABBR, cell_center, local_iso, summarize
 from api.schemas import (BmkgBlock, BmkgForecast, CitySummary, DailyRain, DataRanges, FloodCell, FloodRegion,
                          FloodReport, FloodSummary, Forecast, ForecastRun, ForecastSummary, HourValue, JobStatus,
                          MapCity, QuarantineCount, RainHistory, RiskComponent, RiskOverview, RiverDay, RiverSeries,
-                         SourceStatus, Status, WeatherMap, CityRisk)
+                         SourceStatus, Status, WeatherMap, CityRisk, RainChance, RainOutlook)
 from pipeline.config import REPO_ROOT, settings
 from pipeline.db import engine
 from pipeline.locations import PILOT_LOCATIONS
@@ -347,6 +347,27 @@ def river(slug: str, days: int = Query(60, ge=7, le=3650)) -> RiverSeries:
                        days=[RiverDay(date=r.date.isoformat(), discharge_m3s=round(r.discharge_m3s, 2),
                                       is_forecast=r.is_forecast) for r in rows])
 
+
+@app.get("/api/rain-outlook", response_model=RainOutlook, tags=["Prediksi"])
+def rain_outlook() -> RainOutlook:
+    """Model A: peluang hujan sedang ke atas (≥20 mm sehari) untuk hari prediksi terbaru, per kota."""
+    tomorrow = (datetime.now(ZoneInfo("Asia/Jakarta")) + timedelta(days=1)).date()
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT DISTINCT ON (location) location, target_date, model_name, model_version, issued_at, prob, level
+            FROM rain_predictions
+            WHERE target_date = (SELECT MAX(target_date) FROM rain_predictions)
+            ORDER BY location, issued_at DESC
+        """)).all()
+    if not rows:
+        return RainOutlook(target_date=None, stale=True, model_name=None, model_version=None, cities=[])
+    return RainOutlook(
+        target_date=rows[0].target_date.isoformat(), stale=rows[0].target_date < tomorrow,
+        model_name=rows[0].model_name, model_version=rows[0].model_version,
+        cities=[RainChance(slug=r.location, city=LOCATIONS[r.location].city, prob=round(r.prob, 3), level=r.level,
+                           issued_at=local_iso(r.issued_at, "Asia/Jakarta"))
+                for r in rows if r.location in LOCATIONS],
+    )
 
 @app.get("/api/status", response_model=Status, tags=["Status"])
 def status() -> Status:

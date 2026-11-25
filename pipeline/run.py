@@ -12,6 +12,7 @@ Job:
   history    ETL: hujan harian ERA5 dari data/raw/open-meteo
   floods     ETL: laporan banjir PetaBencana dari data/raw/petabencana
   archive    ETL: prakiraan terbit sehari sebelumnya (Previous Runs, 4 model) untuk Model A
+  predict    Model A: peluang hujan ≥20 mm besok per kota (model @champion dari MLflow)
   rivers     ETL: debit sungai GloFAS (riwayat per tahun + 14 hari terakhir + prakiraan 7 hari)
   views      transformasi SQL (view analitik)
 Semua job idempotent: menjalankan ulang tidak membuat baris ganda.
@@ -154,6 +155,20 @@ def job_archive() -> None:
                       if not df.empty else "kosong")
 
 
+def job_predict() -> None:
+    """Hitung ulang peluang hujan ≥20 mm untuk besok. Butuh paket grup `ml` dan server MLflow."""
+    from pipeline.predict import predict
+
+    with db.JobRun("predict_model_a") as run:
+        df = predict(make_session(), db.engine, _today_wib())
+        run.read = len(df)
+        run.loaded = db.load_dataframe(df, "rain_predictions", ("location", "target_date", "model_name", "model_version"),
+                                       update=("issued_at", "prob", "level"))
+        top = df.sort_values("prob", ascending=False).iloc[0]
+        run.detail = (f"{df['model_name'].iloc[0]} v{df['model_version'].iloc[0]} untuk {df['target_date'].iloc[0]}; "
+                      f"tertinggi {top['location']} {top['prob']:.0%} ({top['level']})")
+
+
 def job_rivers() -> None:
     """Debit GloFAS: riwayat per tahun dari file (ditarik sekali), lalu hari terakhir + prakiraan.
 
@@ -191,10 +206,11 @@ JOBS = {
     "history": job_history,
     "floods": job_floods,
     "archive": job_archive,
+    "predict": job_predict,
     "rivers": job_rivers,
     "views": job_views,
 }
-ALL = ["init", "sync", "raw", "forecasts", "history", "floods", "archive", "rivers", "views"]
+ALL = ["init", "sync", "raw", "forecasts", "history", "floods", "archive", "rivers", "views", "predict"]
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -34,6 +34,18 @@ FEATURES = [
     *[f"city_{c}" for c in CITIES],
 ]
 
+# Kelas peluang untuk UI. 13% = ambang keputusan (maks F1 di validasi); 35% memisahkan hari
+# yang ±separuhnya benar-benar hujan ≥20 mm. Di data uji 2026: Rendah 1,4%, Sedang 22%,
+# Tinggi 45% hari terjadi (validasi 3,6% / 23% / 45%).
+PROB_LEVELS = ((0.35, "Tinggi"), (0.13, "Sedang"), (0.0, "Rendah"))
+
+
+def prob_level(p: float | None) -> str | None:
+    if p is None or np.isnan(p):
+        return None
+    return next(name for threshold, name in PROB_LEVELS if p >= threshold)
+
+
 # Pembagian berdasarkan waktu (hari target). Arsip previous_day1 mulai 1 Feb 2024;
 # 8 hari pertama dipakai untuk menghitung hujan 7 hari terakhir.
 SPLITS = {

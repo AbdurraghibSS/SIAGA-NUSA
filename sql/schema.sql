@@ -6,6 +6,7 @@
 --   forecast_hourly         ETL: prakiraan Open-Meteo per jam, satu baris per (run, jam)
 --   obs_daily               ETL: hujan harian ERA5 (reanalysis) untuk akumulasi & label Model A
 --   forecast_archive_daily  ETL: prakiraan yang terbit SEHARI SEBELUMNYA (Previous Runs), harian WIB, per model
+--   rain_predictions        PREDIKSI SIAGA NUSA: peluang hujan ≥20 mm besok (Model A) per kota
 --   river_points            titik pantau sungai: satu sel GloFAS per kota pilot
 --   river_daily             ETL: debit harian GloFAS (riwayat + prakiraan) per titik
 --   flood_reports           ETL: laporan banjir PetaBencana Jabodetabek + penanda latihan/uji
@@ -89,6 +90,17 @@ CREATE TABLE IF NOT EXISTS forecast_archive_daily (
     pressure_d1_mean    REAL,
     wind_d1_max         REAL,
     PRIMARY KEY (location, date, model)
+);
+
+CREATE TABLE IF NOT EXISTS rain_predictions (
+    location        TEXT NOT NULL REFERENCES locations(slug),
+    target_date     DATE NOT NULL,            -- hari WIB yang diprediksi
+    model_name      TEXT NOT NULL,            -- nama model terdaftar di MLflow
+    model_version   TEXT NOT NULL,
+    issued_at       TIMESTAMPTZ NOT NULL,     -- kapan prediksi terakhir dihitung
+    prob            REAL NOT NULL,            -- peluang hujan harian ≥20 mm (terkalibrasi)
+    level           TEXT NOT NULL,            -- Rendah | Sedang | Tinggi
+    PRIMARY KEY (location, target_date, model_name, model_version)
 );
 
 CREATE TABLE IF NOT EXISTS river_points (

@@ -124,13 +124,15 @@ Snapshot prakiraan dikumpulkan otomatis oleh GitHub Actions (dijadwalkan tiap ja
 | `history` | ETL | Hujan harian ERA5 dari arsip + susul hari yang belum ada lewat API · *ERA5 daily backfill + incremental catch-up* |
 | `floods` | ETL | Arsip PetaBencana bulan berjalan ditarik ulang, laporan latihan/uji/ledakan ditandai · *Refresh current month, flag drill/test/burst reports* |
 | `archive` | ETL | Prakiraan yang terbit **sehari sebelumnya** dari 4 model (Open-Meteo Previous Runs) untuk fitur Model A · *Day-before forecasts from 4 models for Model A features* |
+| `predict` | ML | Peluang hujan ≥20 mm besok per kota dari `siaganusa-hujan@champion` (MLflow) → `rain_predictions` · *Tomorrow's ≥20 mm rain probability from the champion model* |
 | `rivers` | ETL | Debit sungai GloFAS per kota (riwayat 2010–sekarang + prakiraan 7 hari) · *GloFAS river discharge per city (2010–now + 7-day forecast)* |
 | `views` | SQL | CTE, window function (`DENSE_RANK`, `SUM OVER`), `FILTER`, `CASE WHEN` di [`sql/views.sql`](sql/views.sql) |
 
 Semua job idempotent (`ON CONFLICT`), dan setiap eksekusi tercatat di `ingest_runs` untuk halaman Status.<br>
 *All jobs are idempotent (`ON CONFLICT`), and every run is logged in `ingest_runs` for the Status page.*
 
-📄 Penjelasan lengkap · *Full walkthrough*: [`docs/data-processing.md`](docs/data-processing.md)
+📄 Penjelasan lengkap · *Full walkthrough*: [`docs/data-processing.md`](docs/data-processing.md)<br>
+🔢 Dasar setiap ambang & bobot · *Where every threshold and weight comes from*: [`docs/dasar-angka.md`](docs/dasar-angka.md)
 
 ## 🚧 Status & Roadmap
 
@@ -143,7 +145,7 @@ Proyek ini sedang dikembangkan (30 Oktober – 23 Desember 2026).<br>
 - [x] API FastAPI + dasbor web dengan data asli · *FastAPI + web dashboard on real data*
 - [x] Debit sungai GloFAS + indeks risiko banjir (API) · *GloFAS river discharge + flood risk index (API)*
 - [x] Model A dilatih & terdaftar di MLflow (`siaganusa-hujan@champion`), [notebook 04](notebooks/04_model_a_hujan.ipynb) · *Model A trained & registered in MLflow*
-- [ ] Prediksi Model A di dasbor · *Model A predictions on the dashboard*
+- [x] Prediksi Model A di dasbor: peluang + kelas Rendah/Sedang/Tinggi (job `predict`) · *Model A predictions on the dashboard*
 - [ ] Model B (bila lolos *gate*) · *Model B (if it passes the gate)*
 - [ ] Agen Gemini + tools · *Gemini agent + tools*
 - [ ] Chat agen & laporan situasi di dasbor · *Agent chat & situation report in the dashboard*

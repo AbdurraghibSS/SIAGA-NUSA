@@ -64,3 +64,21 @@ def test_multi_model_summary():
     assert f["fc_mean_mm"] == pytest.approx(17.5)
     assert f["fc_n_models_ge20"] == 2                   # gfs 20, icon 25
     assert f["city_jakarta"] == 1
+
+
+@pytest.mark.parametrize("p,level", [(0.0, "Rendah"), (0.129, "Rendah"), (0.13, "Sedang"), (0.349, "Sedang"), (0.35, "Tinggi"), (0.99, "Tinggi")])
+def test_prob_level(p, level):
+    from pipeline.model_a import prob_level
+    assert prob_level(p) == level
+
+
+def test_live_layout_uses_latest_run_for_target_day():
+    from pipeline.predict import as_training_layout
+    item = {"latitude": -6.15, "longitude": 106.85, "hourly": {
+        "time": [f"2025-01-01T{h:02d}:00" for h in range(24)], "precipitation": [2.0] * 24,
+        "cape": [300.0] * 24, "relative_humidity_2m": [90.0] * 24, "cloud_cover": [80.0] * 24,
+        "pressure_msl": [1008.0] * 24, "wind_speed_10m": [7.0] * 24}}
+    df = daily_frame([as_training_layout(item)], LOC, "best_match")
+    assert df.loc[0, "precip_d1_mm"] == pytest.approx(48.0)   # run terbaru jadi fitur "prakiraan"
+    assert df.loc[0, "precip_d0_mm"] == pytest.approx(48.0)
+    assert df.loc[0, "cape_d1_max"] == 300.0

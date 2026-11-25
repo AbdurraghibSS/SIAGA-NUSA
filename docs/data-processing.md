@@ -1,5 +1,7 @@
 # 🔁 Perjalanan Data SIAGA NUSA
 
+> Asal dan alasan setiap ambang, bobot, dan batas angka dikumpulkan terpisah di [`dasar-angka.md`](dasar-angka.md).
+
 Dokumen ini menelusuri perjalanan satu angka, dari respons mentah API BMKG atau Open-Meteo sampai muncul di dasbor sebagai *"Jakarta diprakirakan hujan ringan mulai pukul 12.00"*. Semua angka di sini berasal dari eksekusi nyata pipeline pada **23 November 2026**.
 
 **Prinsip yang dipegang di setiap tahap:**
@@ -101,6 +103,7 @@ Workflow [`snapshot.yml`](../.github/workflows/snapshot.yml) memanggil BMKG (8 k
 | `history` (ERA5) | Backfill dari file arsip 2017–2026, lalu **menyusul hari yang belum ada** lewat API arsip Open-Meteo | ERA5 tertinggal ±5 hari, sehingga API mengembalikan `null` untuk hari terbaru. Hari itu **dibuang, bukan disimpan kosong**: kalau baris kosong sudah tersimpan, `ON CONFLICT DO NOTHING` akan menghalangi angka aslinya masuk nanti |
 | `floods` (PetaBencana) | Arsip **bulan lalu dan bulan ini ditarik ulang** setiap eksekusi, lalu semua arsip lokal dimuat | Laporan yang datang terlambat ikut masuk |
 | `archive` (Previous Runs) | Prakiraan yang terbit **sehari sebelumnya** (`*_previous_day1`) dari 4 model (best_match, ECMWF, GFS, ICON), ditarik per model per tahun sejak Feb 2024, lalu diringkas per hari WIB ke `forecast_archive_daily` | Bukan Historical Forecast API: nilai arsip itu untuk hari H **identik** dengan run hari H sendiri (korelasi 1,000, selisih 0,00 mm), jadi akan membocorkan jawaban ke Model A. Jumlah hujan harian hanya disimpan kalau 24 jamnya lengkap |
+| `predict` (Model A) | Tarik run **terbaru** dari 4 model untuk 9 hari terakhir + besok, hitung fitur dengan kode yang sama seperti pelatihan, muat `siaganusa-hujan@champion` dari MLflow, simpan ke `rain_predictions` | Untuk hari target dipakai run terbaru, bukan `*_previous_day1`: untuk tanggal yang belum terjadi, kolom itu berisi run kemarin (lebih basi daripada saat pelatihan) |
 | `rivers` (GloFAS) | Riwayat 2010–sekarang ditarik **per tahun** ke `data/raw/glofas/daily_<tahun>.json` (tahun lampau tidak ditarik ulang), lalu 14 hari terakhir + prakiraan 7 hari | Nilai prakiraan berubah setiap hari, jadi dimuat dengan `ON CONFLICT ... DO UPDATE`. Jawaban 429 (kuota per menit) ditunggu 65 detik |
 
 #### Memilih sel sungai
@@ -268,6 +271,7 @@ Kode: [`api/main.py`](../api/main.py), [`api/logic.py`](../api/logic.py), [`web/
 | `GET /api/history/{kota}` | Hujan harian ERA5 + akumulasi 3 dan 7 hari | Disiapkan untuk agen dan Model A |
 | `GET /api/risk` | Indeks risiko 0–100 per kota + rincian keempat komponen | Papan duga & rincian poin di dasbor, daftar kota, popup peta; nanti tool agen |
 | `GET /api/river/{kota}` | Debit harian sel sungai kota + median & p90 bulan berjalan | Grafik debit di dasbor |
+| `GET /api/rain-outlook` | Model A: peluang hujan ≥20 mm besok per kota + kelas Rendah (<13%) / Sedang (13–35%) / Tinggi (≥35%) | Hero dasbor, daftar kota, popup peta |
 | `GET /api/status` | Kesegaran sumber, job terakhir, karantina | Halaman Status |
 | `POST /api/admin/refresh` | Menjalankan pipeline di latar belakang | Dilindungi header `X-API-Key` |
 
@@ -381,7 +385,7 @@ docker compose up -d --build             # db + backend (8011) + frontend nginx 
 python -m pipeline.run all               # semua job, berurutan
 python -m pipeline.run forecasts views   # atau job tertentu saja
 # dasbor http://localhost:8010 · dokumentasi API http://localhost:8010/docs
-pytest -q                                # 81 test unit, tanpa database
+pytest -q                                # 88 test unit, tanpa database
 ```
 
 ---
@@ -390,7 +394,6 @@ pytest -q                                # 81 test unit, tanpa database
 
 | Bagian | Status |
 |---|---|
-| Prediksi Model A di dasbor | Model sudah dilatih dan terdaftar (`siaganusa-hujan@champion`, [notebook 04](../notebooks/04_model_a_hujan.ipynb)); job prediksi harian dan tampilan belum |
 | Peringatan dini BMKG (RSS/CAP) | Belum tersambung |
 | Poligon kecamatan (PostGIS) | Wilayah masih memakai kode kab/kota dan sel grid 0,05° |
 | Penjadwal di server | Pipeline masih dijalankan manual atau lewat `POST /api/admin/refresh` |

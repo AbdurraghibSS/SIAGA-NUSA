@@ -37,11 +37,12 @@ HOURLY = (
 RATE_LIMIT_WAIT_S = 65
 
 
-def _get(session, locations: tuple[Location, ...], model: str, start: date, end: date) -> list[dict]:
+def fetch(session, locations: tuple[Location, ...], model: str, start: date, end: date,
+          hourly: tuple[str, ...] = HOURLY) -> list[dict]:
     params = {
         "latitude": ",".join(str(l.lat) for l in locations),
         "longitude": ",".join(str(l.lon) for l in locations),
-        "hourly": ",".join(HOURLY),
+        "hourly": ",".join(hourly),
         "models": model,
         "start_date": f"{start}",
         "end_date": f"{end}",
@@ -73,7 +74,7 @@ def backfill(session, locations: tuple[Location, ...], dest_dir: Path, today: da
                 continue
             start = max(START, date(year, 1, 1))
             end = date(year, 12, 31) if year < today.year else today
-            items = _get(session, locations, model, start, end)
+            items = fetch(session, locations, model, start, end)
             path.write_text(json.dumps(items), encoding="utf-8")
             log.info("previous runs: %s ditulis", path.name)
             written.append(path)

@@ -85,8 +85,14 @@ button { font: inherit; color: inherit; }
 .scale-labels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; font-size: 12px; color: var(--ink-3); margin-top: 6px; }
 .scale-labels span b { display: block; color: var(--ink-2); font-weight: 700; }
 .scale .marker { position: absolute; top: -7px; width: 3px; height: 24px; background: var(--ink); transform: translateX(-1px); border-radius: 2px; transition: left .5s ease; }
-.prob { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; font-size: 15px; color: var(--ink-2); }
-.prob strong { font-family: var(--display); font-size: 30px; font-weight: 800; color: var(--src-pred); line-height: 1; }
+.chance { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; align-items: center; padding-top: 14px; border-top: 1px solid var(--rule); }
+.chance strong { font-family: var(--display); font-size: 46px; font-weight: 900; line-height: .9; grid-row: span 2; }
+.chance .lvl { font-size: 22px; }
+.chance-cap { font-size: 14px; color: var(--ink-2); }
+.chance .tag { grid-column: 1 / -1; margin-top: 4px; white-space: normal; }
+details.how { margin-top: 16px; font-size: 13.5px; color: var(--ink-2); max-width: 110ch; }
+details.how summary { cursor: pointer; color: var(--rain); width: fit-content; }
+details.how p { margin-top: 8px; }
 
 .curtain-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 20px; align-items: baseline; margin-bottom: 4px; }
 .curtain-head h2 { font-size: 26px; font-weight: 700; }
@@ -317,7 +323,12 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
               <div class="scale"><i></i><i></i><i></i><i></i><i></i><span class="marker" id="marker" style="left:0"></span></div>
               <div class="scale-labels"><span><b>Ringan</b>0,5–20</span><span><b>Sedang</b>20–50</span><span><b>Lebat</b>50–100</span><span><b>Sangat lebat</b>100–150</span><span><b>Ekstrem</b>&gt;150 mm</span></div>
             </div>
-            <p class="prob"><strong>–</strong><span>peluang hujan ≥20 mm besok</span><span class="tag t-pred"><b>Model A</b> belum dilatih, menyusul</span></p>
+            <div class="chance" id="chance" title="Peluang total hujan besok (00–24 WIB) mencapai ≥20 mm, yaitu hujan sedang ke atas. Bukan peluang turun hujan sama sekali.">
+              <strong id="chanceNum">–</strong>
+              <span class="lvl" id="chanceLvl">Memuat…</span>
+              <span class="chance-cap" id="chanceCap">peluang hujan sedang–lebat (≥20 mm) besok</span>
+              <span class="tag t-pred" id="chanceTag"><b>Prediksi SIAGA NUSA</b> Model A</span>
+            </div>
           </div>
         </div>
 
@@ -380,7 +391,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
       <div class="risk-head">
         <div>
           <h2 id="riskTitle">Risiko banjir</h2>
-          <p>Gabungan hujan 72 jam terakhir, prakiraan 24 jam, debit sungai, dan riwayat laporan banjir. Angka 0–100 ini hitungan SIAGA NUSA dari aturan yang terbuka, <b>bukan status siaga resmi</b> BMKG atau BPBD.</p>
+          <p>Skor 0–100 dari empat komponen di bawah. <b>Bukan status siaga resmi</b> BMKG atau BPBD.</p>
         </div>
         <span class="tag t-pred" id="riskTag"><b>Indeks SIAGA NUSA</b> rule-based v1</span>
       </div>
@@ -397,7 +408,10 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
           <p class="river-note" id="riverNote"></p>
         </div>
       </div>
-      <p class="risk-foot">Rendah &lt;40 · Sedang 40–69 · Tinggi ≥70. Hujan dan debit dibandingkan dengan riwayat bulan yang sama; hanya kondisi di atas median yang menambah poin. Komponen tanpa data tidak dihitung dan bobotnya dibagi ke komponen lain. Uji ke belakang (Jakarta 2017–2025): hari berskor Tinggi 6× lebih sering disertai banjir luas daripada hari Rendah, tetapi banyak banjir lokal tidak tertangkap.</p>
+      <details class="how"><summary>Cara menghitung</summary>
+        <p>Rendah &lt;40 · Sedang 40–69 · Tinggi ≥70. Hujan dan debit dibandingkan dengan riwayat bulan yang sama; hanya kondisi di atas median yang menambah poin. Komponen tanpa data tidak dihitung dan bobotnya dibagi ke komponen lain.</p>
+        <p>Uji ke belakang (Jakarta 2017–2025): hari berskor Tinggi 6× lebih sering disertai banjir luas daripada hari Rendah, tetapi banyak banjir lokal tidak tertangkap.</p>
+      </details>
     </div>
 
     <div class="flood-head">
@@ -471,7 +485,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
       <div>
         <h3 class="h3">Model</h3>
         <ul class="qlist">
-          <li><strong style="color:var(--ink-3)">A</strong><span>Prediksi hujan ≥20 mm besok<small>Label sudah ada (ERA5 ≥20 mm/hari). Belum dilatih.</small></span></li>
+          <li><strong style="color:var(--src-pred)">A</strong><span>Peluang hujan ≥20 mm besok<small>Aktif. Regresi logistik terkalibrasi, siaganusa-hujan@champion. Uji 2026: PR-AUC 0,40 vs aturan prakiraan 0,32.</small></span></li>
           <li><strong style="color:var(--ink-3)">B</strong><span>Peluang laporan banjir per sel H+1<small>Menunggu uji kelayakan data.</small></span></li>
           <li><strong style="color:var(--src-pred)">R</strong><span>Indeks risiko banjir rule-based v1<small>Aktif. Empat komponen berbobot, tanpa ML. Rumus di pipeline/risk.py.</small></span></li>
         </ul>
@@ -571,7 +585,23 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
 
   const bounds = [0.5, 20, 50, 100, 150, 250];
   const scalePos = (mm) => { if (mm == null || mm < 0.5) return 0; for (let i = 0; i < 5; i++) if (mm < bounds[i + 1]) return (i + (mm - bounds[i]) / (bounds[i + 1] - bounds[i])) / 5; return 1; };
-  let cities = [], sel = 0, intensity = 0.4, risk = {}, riskAt = null;
+  let cities = [], sel = 0, intensity = 0.4, risk = {}, riskAt = null, rain = {}, rainMeta = null;
+  const CHANCE_NOTE = { Rendah: 'di data uji, ±1 dari 70 hari seperti ini benar-benar ≥20 mm', Sedang: 'di data uji, ±1 dari 5 hari seperti ini benar-benar ≥20 mm', Tinggi: 'di data uji, ±1 dari 2 hari seperti ini benar-benar ≥20 mm' };
+  const pct = (p) => p == null ? '–' : (p < 0.01 ? '<1' : Math.round(p * 100)) + '%';
+  function renderChance(slug) {
+    const r = rain[slug];
+    const lvl = $('#chanceLvl');
+    if (!r) {
+      $('#chanceNum').textContent = '–'; lvl.className = 'lvl'; lvl.textContent = 'Belum ada prediksi';
+      $('#chanceTag').innerHTML = '<b>Prediksi SIAGA NUSA</b> Model A belum dijalankan'; return;
+    }
+    const day = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' }).format(new Date(rainMeta.target_date + 'T12:00:00+07:00'));
+    $('#chanceNum').textContent = pct(r.prob);
+    lvl.className = 'lvl lv-' + r.level; lvl.textContent = 'Peluang ' + r.level.toLowerCase();
+    $('#chanceCap').textContent = `hujan sedang–lebat (≥20 mm) ${rainMeta.stale ? day : 'besok, ' + day}`;
+    $('#chanceTag').innerHTML = `<b>Prediksi SIAGA NUSA</b> Model A v${esc(rainMeta.model_version)} · ${hhmm(r.issued_at)} WIB${rainMeta.stale ? ' · belum diperbarui untuk besok' : ''}`;
+    $('#chance').title = `Peluang total hujan ${day} (00–24 WIB) mencapai ≥20 mm. ${r.level}: ${CHANCE_NOTE[r.level]}. Bukan peluang turun hujan sama sekali.`;
+  }
   const MONTHS = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
   const LEVEL_VAR = { Rendah: '--low', Sedang: '--mid', Tinggi: '--high' };
 
@@ -640,7 +670,8 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     $('#riverTitle').textContent = `Debit ${rv.river}`;
     const last = rv.days.filter((d) => !d.is_forecast).pop();
     $('#riverTag').innerHTML = `<b>GloFAS</b> ${last ? 's.d. ' + shortDate(last.date + 'T12:00:00+07:00') : ''} + prakiraan`;
-    $('#riverNote').textContent = `Sel GloFAS ${fmt(rv.lat, 3)}, ${fmt(rv.lon, 3)} · keyakinan sel ${rv.confidence}. ${rv.note || ''} Angka model, bukan pengukuran pos duga air.`;
+    $('#riverNote').textContent = `Angka model GloFAS, bukan pos duga air · keyakinan sel ${rv.confidence}`;
+    $('#riverNote').title = `Sel ${fmt(rv.lat, 3)}, ${fmt(rv.lon, 3)}. ${rv.note || ''}`;
     drawRiver(rv);
   }
 
@@ -753,7 +784,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     $('#when').textContent = `${longDate(f.window_start, f.tz_abbr)}, ${hhmm(f.window_start)} ${f.tz_abbr}`;
     $('#headline').textContent = headline(c, f);
     $('#heroSrc').innerHTML = f.latest
-      ? `Disusun otomatis dari prakiraan per jam <b>Open-Meteo</b> yang diambil ${hhmm(f.latest.issued_at)} ${f.tz_abbr}, bukan prediksi model SIAGA NUSA. Prakiraan resmi BMKG ada di bawah.`
+      ? `Dari prakiraan per jam <b>Open-Meteo</b> ${hhmm(f.latest.issued_at)} ${f.tz_abbr} · prakiraan resmi BMKG di bawah`
       : '';
     $('#totalNum').innerHTML = `${fmt(s.total_mm)}<span>mm</span>`;
     $('#marker').style.left = (scalePos(s.total_mm) * 100) + '%';
@@ -784,6 +815,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     intensity = Math.min(1.4, 0.12 + (s.total_mm || 0) / 45);
     drawCurtain(f);
     renderRisk(c.slug);
+    renderChance(c.slug);
     loadRiver(c.slug);
   }
 
@@ -835,7 +867,8 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
         <span class="cn">${esc(c.city)}</span><span class="mm">${fmt(c.total_24h_mm)}<small>mm</small></span>
         <span class="mini"><i></i><i></i><i></i><i></i><i></i><span class="dot" style="left:${scalePos(c.total_24h_mm) * 100}%"></span></span>
         <span class="sub">${c.category ? cap(c.category === 'tidak hujan' ? 'tidak hujan' : 'hujan ' + c.category) : 'Belum ada data'}${c.peak_at ? ` · puncak ${hhmm(c.peak_at)} ${c.tz_abbr}` : ''}</span>
-        ${risk[c.slug] && risk[c.slug].level ? `<span class="sub"><span class="rl" style="--lv:var(${LEVEL_VAR[risk[c.slug].level]})">Risiko banjir ${risk[c.slug].level} · ${risk[c.slug].score}</span></span>` : ''}</button>`).join('');
+        ${rain[c.slug] ? `<span class="sub"><span class="rl" style="--lv:var(${LEVEL_VAR[rain[c.slug].level]})">Besok ≥20 mm: ${pct(rain[c.slug].prob)} · ${rain[c.slug].level.toLowerCase()}</span></span>` : ''}
+        ${risk[c.slug] && risk[c.slug].level ? `<span class="sub"><span class="rl" style="--lv:var(${LEVEL_VAR[risk[c.slug].level]})">Risiko banjir ${risk[c.slug].level.toLowerCase()} · ${risk[c.slug].score}</span></span>` : ''}</button>`).join('');
     document.querySelectorAll('.city-row .mini').forEach((m) => m.querySelectorAll('i').forEach((i, n) => { i.style.opacity = shade[n] * .5; }));
     document.querySelectorAll('#cityTabs button').forEach((b, i) => b.addEventListener('click', () => selectCity(i)));
     document.querySelectorAll('.city-row').forEach((b, i) => b.addEventListener('click', () => { selectCity(i); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
@@ -1028,6 +1061,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
       `<b>${fmt(c.total_24h_mm)} mm</b> dalam 24 jam${c.category ? ` (${c.category === 'tidak hujan' ? 'tidak hujan' : 'hujan ' + c.category})` : ''}<br>` +
       `Pukul ${hhmm(h.valid_at)} ${c.tz_abbr}: ${fmt(h.precip_mm)} mm/jam${h.precip_prob_pct != null ? `, peluang ${Math.round(h.precip_prob_pct)}%` : ''}<br>` +
       `<span style="color:var(--src-resmi)">BMKG sekarang:</span> ${esc(c.bmkg_now || '–')}<br>` +
+      (rain[c.slug] ? `<span style="color:var(--src-pred)">Hujan ≥20 mm besok:</span> ${pct(rain[c.slug].prob)} (${rain[c.slug].level.toLowerCase()})<br>` : '') +
       (risk[c.slug] && risk[c.slug].level ? `<span style="color:var(--src-pred)">Indeks risiko banjir:</span> ${risk[c.slug].level} (${risk[c.slug].score}/100)<br>` : '') +
       `<button class="pbtn" type="button" data-slug="${c.slug}">Buka di dasbor</button>`;
   }
@@ -1129,9 +1163,10 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     if (location.protocol === 'file:') { showError('Buka lewat server API: uvicorn api.main:app --port 8010, lalu http://localhost:8010/'); return; }
     try {
       // Indeks risiko boleh gagal tanpa menjatuhkan dasbor.
-      const [cs, st, rk] = await Promise.all([api('/api/cities'), api('/api/status'), api('/api/risk').catch(() => null)]);
+      const [cs, st, rk, ro] = await Promise.all([api('/api/cities'), api('/api/status'), api('/api/risk').catch(() => null), api('/api/rain-outlook').catch(() => null)]);
       cities = cs;
       if (rk) { risk = Object.fromEntries(rk.cities.map((r) => [r.slug, r])); riskAt = rk.computed_at; }
+      if (ro && ro.cities.length) { rain = Object.fromEntries(ro.cities.map((r) => [r.slug, r])); rainMeta = ro; }
       renderCities(); renderFresh(st); renderStatus(st);
       const jakarta = Math.max(0, cities.findIndex((c) => c.slug === 'jakarta'));
       await selectCity(sel || jakarta);

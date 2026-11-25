@@ -216,3 +216,19 @@ class RiverSeries(BaseModel):
     month_p50_m3s: float | None = Field(description="Median debit bulan berjalan (riwayat 2010–2025)")
     month_p90_m3s: float | None
     days: list[RiverDay]
+
+
+class RainChance(BaseModel):
+    slug: str
+    city: str
+    prob: float = Field(description="Peluang hujan harian ≥20 mm (00–24 WIB), terkalibrasi")
+    level: str = Field(description="Rendah (<13%) | Sedang (13–35%) | Tinggi (≥35%)")
+    issued_at: str
+
+
+class RainOutlook(BaseModel):
+    target_date: str | None = Field(description="Hari WIB yang diprediksi")
+    stale: bool = Field(description="True kalau prediksi terbaru bukan untuk besok (job predict belum jalan hari ini)")
+    model_name: str | None
+    model_version: str | None
+    cities: list[RainChance]
