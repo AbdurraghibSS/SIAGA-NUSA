@@ -1,4 +1,4 @@
-"""API SIAGA NUSA (FastAPI) · menyajikan data pipeline ke dasbor, dan nanti ke agen.
+"""API SIAGA NUSA (FastAPI) · menyajikan data pipeline ke dasbor dan ke agen Tanya.
 
     uvicorn api.main:app --reload --port 8010
     → dasbor  http://localhost:8010/
@@ -9,10 +9,13 @@ admin yang dilindungi header `X-API-Key`.
 """
 
 import logging
+import threading
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -20,7 +23,8 @@ from api.logic import REGION_NAMES, TZ_ABBR, cell_center, local_iso, summarize
 from api.schemas import (BmkgBlock, BmkgForecast, CitySummary, DailyRain, DataRanges, FloodCell, FloodRegion,
                          FloodReport, FloodSummary, Forecast, ForecastRun, ForecastSummary, HourValue, JobStatus,
                          MapCity, QuarantineCount, RainHistory, RiskComponent, RiskOverview, RiverDay, RiverSeries,
-                         SourceStatus, Status, WeatherMap, CityRisk, RainChance, RainOutlook)
+                         SourceStatus, Status, WeatherMap, CityRisk, RainChance, RainOutlook,
+                         ChatRequest, ChatResponse)
 from pipeline.config import REPO_ROOT, settings
 from pipeline.db import engine
 from pipeline.locations import PILOT_LOCATIONS
@@ -403,6 +407,102 @@ def status() -> Status:
                           flood_last_report_at=local_iso(fl.last_at, tz),
                           flood_reports_used=fl.used, flood_reports_excluded=fl.excluded),
     )
+
+
+# ---------------------------------------------------------------------------
+# Agen Tanya (Gemini + tools, lihat api/agent/)
+# ---------------------------------------------------------------------------
+_rate: dict[str, deque] = defaultdict(deque)
+_rate_lock = threading.Lock()
+
+
+def _rate_limited(ip: str) -> bool:
+    """Jendela geser 60 detik per IP, di memori (cukup untuk satu proses uvicorn)."""
+    now = time.monotonic()
+    with _rate_lock:
+        q = _rate[ip]
+        while q and now - q[0] > 60:
+            q.popleft()
+        if len(q) >= settings.agent_rate_per_min:
+            return True
+        q.append(now)
+        return False
+
+
+def _log_agent(question: str, res, error: str | None = None) -> None:
+    import json
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO agent_logs (question, status, model, rounds, tools, duration_ms, input_tokens,
+                                        output_tokens, checks, detail)
+                VALUES (:q, :status, :model, :rounds, CAST(:tools AS jsonb), :ms, :tin, :tout, CAST(:checks AS jsonb), :detail)
+            """), {
+                "q": question[:500], "status": res.status if res else "error", "model": settings.gemini_model,
+                "rounds": res.rounds if res else 0,
+                "tools": json.dumps([vars(s) for s in res.steps] if res else [], ensure_ascii=False, default=str),
+                "ms": res.duration_ms if res else None, "tin": res.input_tokens if res else None,
+                "tout": res.output_tokens if res else None,
+                "checks": json.dumps(res.checks if res else None, ensure_ascii=False), "detail": error,
+            })
+    except Exception:  # log tidak boleh menjatuhkan jawaban
+        log.exception("gagal menulis agent_logs")
+
+
+_answer_cache: dict[str, tuple[float, ChatResponse]] = {}
+
+
+def _cache_key(req: ChatRequest) -> str | None:
+    """Hanya pertanyaan pembuka (tanpa riwayat) yang di-cache; dinormalkan huruf kecil + spasi."""
+    return None if req.history else " ".join(req.message.lower().split())
+
+
+def _respond(res) -> ChatResponse:
+    return ChatResponse(answer=res.answer, status=res.status, steps=[vars(s) for s in res.steps],
+                        sources=res.sources, checks=res.checks, model=res.model, duration_ms=res.duration_ms)
+
+
+@app.post("/api/chat", response_model=ChatResponse, tags=["Agen"])
+def chat(req: ChatRequest, request: Request) -> ChatResponse:
+    """Tanya SIAGA NUSA: Gemini memilih tool data/panduan, lalu menjawab dengan label sumber.
+
+    Stateless: klien mengirim ulang `history`. Hemat kuota Gemini gratis:
+    1. pertanyaan pembuka yang sama dijawab dari cache selama `AGENT_CACHE_TTL_S` detik;
+    2. model kena 429 → pindah ke `GEMINI_FALLBACK_MODELS`;
+    3. semua model habis (atau kunci kosong) → mode hemat tanpa LLM (api/agent/fallback.py).
+    Batas: 500 karakter, `AGENT_RATE_PER_MIN` pertanyaan per menit per IP, `AGENT_MAX_ROUNDS` putaran tool.
+    """
+    from api.agent import core, fallback
+
+    ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "?")
+    if _rate_limited(ip):
+        raise HTTPException(status_code=429, detail="Terlalu banyak pertanyaan. Tunggu sebentar lalu coba lagi.")
+    key = _cache_key(req)
+    hit = _answer_cache.get(key) if key else None
+    if hit and time.monotonic() - hit[0] < settings.agent_cache_ttl_s:
+        return hit[1].model_copy(update={"status": "cached", "duration_ms": 0})
+
+    history = [t.model_dump() for t in req.history]
+    if not settings.gemini_api_key:
+        res = fallback.answer(req.message, reason="off") if core.guard.check_input(req.message).ok \
+            else core.run(req.message, history)
+    else:
+        try:
+            res = core.run(req.message, history)
+        except core.QuotaExhausted:
+            res = fallback.answer(req.message, reason="quota")
+        except Exception as exc:
+            _log_agent(req.message, None, f"{type(exc).__name__}: {str(exc)[:300]}")
+            raise HTTPException(status_code=503, detail=f"Agen sedang bermasalah ({type(exc).__name__}). "
+                                                        "Data di dasbor tetap bisa dipakai.")
+    _log_agent(req.message, res)
+    out = _respond(res)
+    if key and res.status == "ok":
+        _answer_cache[key] = (time.monotonic(), out)
+        if len(_answer_cache) > 500:  # cegah tumbuh tanpa batas
+            _answer_cache.pop(next(iter(_answer_cache)))
+    return out
 
 
 # ---------------------------------------------------------------------------

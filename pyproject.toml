@@ -11,6 +11,10 @@ dependencies = [
     "pydantic-settings>=2.4",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "google-genai>=1.50",     # agen Tanya: Gemini function calling
+    "fastembed>=0.6",         # embedding lokal (ONNX) untuk RAG, tanpa kuota API
+    "qdrant-client>=1.20",    # vector DB untuk RAG panduan
+    "pypdf>=5",               # ekstraksi teks PDF panduan (job knowledge)
 ]
 
 [project.optional-dependencies]

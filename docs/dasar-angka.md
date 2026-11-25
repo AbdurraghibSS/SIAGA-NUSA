@@ -30,6 +30,7 @@ Hal yang perlu dibedakan saat menjelaskan:
 - Perka BMKG KEP.009/2010 mendefinisikan *hujan lebat* sebagai ≥ 50 mm/24 jam, tetapi peraturan itu **sudah dicabut** oleh Peraturan BMKG No. 9/2022.
 - Peraturan 2022 mengatur tingkatan peringatan (waspada/siaga/awas) **tanpa angka mm**.
 - Jadi yang resmi adalah **batas-batas kategorinya**. BMKG tidak menetapkan "≥ 20 mm" sebagai ambang peringatan.
+- ⚠️ **Batas bawah "ringan" berbeda antar-dokumen BMKG.** [SE Deputi Meteorologi No. SE.3/DM/XII/2024](https://jdih.bmkg.go.id/common/dokumen/2024sedmbmkg003.pdf) (simbol prakiraan di InfoBMKG) menulis Hujan Ringan **5–20 mm/hari** (1–5 mm/jam), Sedang 20–50 (5–10 mm/jam), Lebat 50–100 (10–20 mm/jam). Tabel di atas (surat stasiun klimatologi) memakai 0,5–20 mm. Batas 20, 50, dan 100 mm sama, jadi label Model A (≥ 20 mm) tidak terpengaruh; yang berbeda hanya hari dengan 0,5–5 mm. Belum diputuskan mana yang dipakai dasbor. SE 2024 juga ada di korpus RAG agen.
 
 Kode: [`pipeline/rainfall.py`](../pipeline/rainfall.py), fungsi SQL `bmkg_category()` di [`sql/views.sql`](../sql/views.sql).
 

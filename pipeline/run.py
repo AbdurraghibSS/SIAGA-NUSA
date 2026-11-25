@@ -15,6 +15,7 @@ Job:
   predict    Model A: peluang hujan ≥20 mm besok per kota (model @champion dari MLflow)
   rivers     ETL: debit sungai GloFAS (riwayat per tahun + 14 hari terakhir + prakiraan 7 hari)
   views      transformasi SQL (view analitik)
+  knowledge  RAG: PDF panduan BNPB/BMKG/BPBD di docs/ → Qdrant (tidak ikut `all`)
 Semua job idempotent: menjalankan ulang tidak membuat baris ganda.
 """
 
@@ -192,6 +193,18 @@ def job_rivers() -> None:
         run.detail = f"{len(RIVER_POINTS)} titik, {df['date'].min()} s.d. {df['date'].max()} (prakiraan sejak {today})"
 
 
+def job_knowledge() -> None:
+    """RAG: PDF panduan di docs/ → embedding Gemini → Qdrant. Tidak ikut `all` (butuh PDF lokal + kunci Gemini)."""
+    from pipeline import knowledge
+
+    with db.JobRun("knowledge_rag") as run:
+        s = knowledge.build(settings.knowledge_dir)
+        run.read = run.loaded = s["chunks"]
+        run.detail = f"{settings.qdrant_collection}: " + ", ".join(s["docs"])
+        if s["missing"]:
+            run.detail += f"; PDF belum ada: {', '.join(s['missing'])}"
+
+
 def job_views() -> None:
     with db.JobRun("views") as run:
         db.run_sql_file("views.sql")
@@ -209,6 +222,7 @@ JOBS = {
     "predict": job_predict,
     "rivers": job_rivers,
     "views": job_views,
+    "knowledge": job_knowledge,
 }
 ALL = ["init", "sync", "raw", "forecasts", "history", "floods", "archive", "rivers", "views", "predict"]
 

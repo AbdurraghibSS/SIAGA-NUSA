@@ -244,12 +244,28 @@ details.steps summary { cursor: pointer; color: var(--rain); font-size: 13.5px; 
 .steps code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 12px; color: var(--ink-2); word-break: break-word; }
 .steps li span { color: var(--ink-3); }
 .suggest { display: flex; flex-wrap: wrap; gap: 6px; }
-.suggest button { background: none; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 11px; font-size: 13px; color: var(--ink-2); cursor: not-allowed; }
+.suggest button { background: none; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 11px; font-size: 13px; color: var(--ink-2); cursor: pointer; text-align: left; }
+.suggest button:hover { color: var(--ink); border-color: var(--rain); }
+.a p, .a ul { margin: 0; }
+.a ul { padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.a .tag { white-space: normal; vertical-align: baseline; margin-right: 2px; }
+.a .tag::before { align-self: center; }
+.a .meta { font-size: 12.5px; color: var(--ink-3); }
+.a .src-list { font-size: 13px; color: var(--ink-2); border-left: 2px solid var(--src-resmi); padding-left: 12px; }
+.a .src-list b { color: var(--ink); font-weight: 600; }
+.a .warn { font-size: 13px; border-left: 2px solid var(--mid); padding-left: 12px; color: var(--ink-2); }
+.steps li.fail code { color: var(--high); }
+.thinking { display: inline-flex; gap: 5px; align-items: center; color: var(--ink-3); font-size: 14px; }
+.thinking i { width: 3px; height: 10px; border-radius: 2px; background: var(--rain); animation: drip 1s infinite ease-in; opacity: .2; }
+.thinking i:nth-child(2) { animation-delay: .15s; } .thinking i:nth-child(3) { animation-delay: .3s; }
+@keyframes drip { 0% { transform: translateY(-5px); opacity: 0; } 50% { opacity: 1; } 100% { transform: translateY(5px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .thinking i { animation: none; opacity: .8; } }
 .ask-foot { border-top: 1px solid var(--rule); padding: 12px; display: flex; gap: 8px; }
 .ask-panel.full .ask-foot { padding: 14px max(12px, calc((100% - 760px) / 2)); }
 .ask-foot input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: rgba(231,237,240,.06); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; }
 .btn { background: var(--ink); color: var(--sky); border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 700; cursor: pointer; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+.ask-foot input:disabled { opacity: .6; }
 
 /* ================= STATUS ================= */
 .table-scroll { overflow-x: auto; }
@@ -515,34 +531,19 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M4 4l10 10M14 4L4 14" stroke="currentColor" stroke-width="1.6"/></svg>
     </button>
   </div>
-  <div class="ask-body">
-    <p class="ask-note">Agen belum tersambung. Percakapan di bawah ini contoh tampilan, bukan jawaban dari data hari ini.</p>
-    <p class="q">Nanti malam Jakarta hujan lebat nggak? Kemarin Kemang banjir, besok bakal banjir lagi?</p>
-    <div class="a">
-      <span class="who">SIAGA NUSA · contoh</span>
-      <p>Malam ini Jakarta kemungkinan hujan sedang, belum sampai lebat.</p>
-      <div class="fact t-resmi"><span class="tag t-resmi"><b>Resmi</b> BMKG</span>Mampang Prapatan: hujan sedang pukul 18.00, hujan ringan pukul 21.00.</div>
-      <div class="fact t-warga"><span class="tag t-warga"><b>Laporan warga</b> PetaBencana</span>Ada 4 laporan genangan di sekitar Kemang kemarin sore. Belum terverifikasi.</div>
-      <details class="steps"><summary>Lihat langkah agen</summary><ol>
-        <li><code>get_weather_forecast(region="Jakarta", hours=24)</code><span>412 ms</span></li>
-        <li><code>get_flood_reports(near="Kemang", since="2026-11-22")</code><span>306 ms</span></li>
-      </ol></details>
-    </div>
-    <p class="q">Ada pesan: "BMKG: Jakarta siaga banjir besok, segera ungsikan barang!" Bener nggak?</p>
-    <div class="a">
-      <span class="who">SIAGA NUSA · contoh</span>
-      <p class="decline">Saya tidak menemukan peringatan seperti itu dari BMKG. Status siaga hanya datang dari BMKG atau BPBD.</p>
-    </div>
-    <div class="suggest" aria-label="Contoh pertanyaan">
-      <button type="button" disabled>Daerah mana yang paling rawan besok?</button>
-      <button type="button" disabled>Hujan 3 hari terakhir di Bogor?</button>
-      <button type="button" disabled>Apa yang berubah sejak pagi?</button>
+  <div class="ask-body" id="askBody" aria-live="polite">
+    <p class="ask-note">Jawaban disusun dari data SIAGA NUSA dan panduan resmi BNPB/BMKG/BPBD. Ini bukan peringatan resmi: saat cuaca ekstrem, ikuti BMKG dan BPBD setempat. Darurat: 112.</p>
+    <div class="suggest" id="askSuggest" aria-label="Contoh pertanyaan">
+      <button type="button">Daerah mana yang paling rawan banjir besok?</button>
+      <button type="button">Nanti malam Jakarta hujan lebat nggak?</button>
+      <button type="button">Apa yang harus disiapkan sebelum banjir?</button>
+      <button type="button">Kalau rumah mulai kebanjiran, apa yang harus dilakukan?</button>
     </div>
   </div>
   <form class="ask-foot" id="askForm">
     <label for="ask" style="position:absolute; left:-9999px">Pertanyaan</label>
-    <input id="ask" type="text" placeholder="Agen belum tersambung" autocomplete="off" disabled>
-    <button class="btn" type="submit" disabled>Kirim</button>
+    <input id="ask" type="text" placeholder="Tanya soal hujan, banjir, atau kesiapsiagaan" autocomplete="off" maxlength="500">
+    <button class="btn" type="submit" id="askSend">Kirim</button>
   </form>
 </section>
 
@@ -1131,7 +1132,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     $('#askFull').setAttribute('aria-label', full ? 'Keluar dari layar penuh' : 'Layar penuh');
     $('#askFull').title = full ? 'Keluar dari layar penuh' : 'Layar penuh';
   }
-  function openAsk() { panel.hidden = false; fab.hidden = true; $('#askClose').focus(); }
+  function openAsk() { panel.hidden = false; fab.hidden = true; $('#ask').focus(); }
   function closeAsk() { panel.hidden = true; panel.classList.remove('full'); setFullIcon(); fab.hidden = false; fab.focus(); }
   fab.addEventListener('click', openAsk);
   $('#askClose').addEventListener('click', closeAsk);
@@ -1140,7 +1141,78 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     if (e.key !== 'Escape' || panel.hidden) return;
     if (panel.classList.contains('full')) { panel.classList.remove('full'); setFullIcon(); } else closeAsk();
   });
-  $('#askForm').addEventListener('submit', (e) => e.preventDefault());
+  const askBody = $('#askBody'), askInput = $('#ask'), askSend = $('#askSend');
+  const chatHistory = [];  // [{role: 'user'|'model', text}], dikirim ulang ke /api/chat (maks 8)
+  const LABEL_CLS = [[/resmi bmkg/i, 't-resmi'], [/panduan/i, 't-resmi'], [/prediksi/i, 't-pred'], [/warga/i, 't-warga'], [/model|open-meteo|glofas/i, 't-model']];
+  const labelCls = (t) => (LABEL_CLS.find(([rx]) => rx.test(t)) || [null, 't-model'])[1];
+  const TOOL_NAMES = { get_weather_forecast: 'prakiraan kota', get_cities_overview: 'ringkasan 8 kota', get_rain_chance_tomorrow: 'peluang hujan besok (Model A)',
+    get_flood_risk: 'indeks risiko banjir', get_river_conditions: 'debit sungai', get_flood_reports: 'laporan warga',
+    get_rain_history: 'riwayat hujan', search_preparedness_guide: 'panduan resmi' };
+  // Markdown sederhana dari jawaban agen: paragraf, daftar "- ", **tebal**, dan [Label] → tag sumber.
+  function inline(t) {
+    return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+      .replace(/\[([^\]\n]{3,40})\]/g, (_, l) => `<span class="tag ${labelCls(l)}"><b>${l}</b></span>`);
+  }
+  function renderMd(text) {
+    const out = []; let list = null;
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      const m = line.match(/^[-*•]\s+(.*)$/) || line.match(/^\d+[.)]\s+(.*)$/);
+      if (m) { if (!list) { list = []; out.push(list); } list.push(inline(m[1])); continue; }
+      list = null;
+      if (line) out.push(`<p>${inline(line)}</p>`);
+    }
+    return out.map((b) => Array.isArray(b) ? `<ul>${b.map((li) => `<li>${li}</li>`).join('')}</ul>` : b).join('');
+  }
+  const argText = (a) => Object.entries(a || {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ');
+  function renderAnswer(box, r) {
+    let html0;
+    const who = r.status === 'fallback' ? 'SIAGA NUSA · mode hemat' : r.status === 'cached' ? 'SIAGA NUSA · dari jawaban sebelumnya' : 'SIAGA NUSA';
+    let text = r.answer;
+    if (r.status === 'fallback') { const i = text.indexOf('\n'); html0 = i > 0 ? `<p class="warn">${esc(text.slice(0, i))}</p>` : ''; text = i > 0 ? text.slice(i + 1) : text; } else html0 = '';
+    let html = `<span class="who">${who}</span>${html0}${renderMd(text)}`;
+    if (r.sources && r.sources.length) {
+      html += `<div class="src-list"><b>Panduan yang dirujuk</b><br>${r.sources.map((s) => `${esc(s.title)} (${esc(s.publisher)} ${s.year || ''}, hlm. ${esc(s.pages)})`).join('<br>')}</div>`;
+    }
+    const c = r.checks || {};
+    if (c.unsupported_numbers && c.unsupported_numbers.length) html += `<p class="warn">Pemeriksa angka: ${c.unsupported_numbers.map(esc).join(', ')} tidak ditemukan di data yang diambil agen. Periksa ulang di dasbor.</p>`;
+    if (c.status_terms && c.status_terms.length) html += `<p class="warn">Status Waspada/Siaga/Awas hanya ditetapkan BMKG atau BPBD, bukan SIAGA NUSA.</p>`;
+    if (r.steps && r.steps.length) {
+      html += `<details class="steps"><summary>Lihat langkah agen (${r.steps.length} alat, ${fmt(r.duration_ms / 1000)} detik)</summary><ol>${r.steps.map((s) =>
+        `<li class="${s.ok ? '' : 'fail'}"><code>${esc(s.tool)}(${esc(argText(s.args))})</code><span>${s.ok ? esc(TOOL_NAMES[s.tool] || '') + ' · ' : 'gagal · '}${s.ms} ms</span></li>`).join('')}</ol></details>`;
+    }
+    box.innerHTML = html;
+  }
+  function addQ(text) { const p = document.createElement('p'); p.className = 'q'; p.textContent = text; askBody.appendChild(p); }
+  function scrollAsk() { askBody.scrollTop = askBody.scrollHeight; }
+  async function ask(text) {
+    text = text.trim();
+    if (!text || askSend.disabled) return;
+    $('#askSuggest').hidden = true;
+    addQ(text);
+    const box = document.createElement('div'); box.className = 'a';
+    box.innerHTML = '<span class="who">SIAGA NUSA</span><span class="thinking"><i></i><i></i><i></i> Mengambil data…</span>';
+    askBody.appendChild(box); scrollAsk();
+    askInput.value = ''; askInput.disabled = askSend.disabled = true;
+    try {
+      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, history: chatHistory.slice(-8) }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const d = typeof body.detail === 'string' ? body.detail : 'Pertanyaan tidak bisa diproses.';
+        box.innerHTML = `<span class="who">SIAGA NUSA</span><p class="decline">${esc(d)}</p>`;
+      } else {
+        renderAnswer(box, body);
+        if (body.status === 'ok' || body.status === 'cached') chatHistory.push({ role: 'user', text }, { role: 'model', text: body.answer });
+      }
+    } catch (e) {
+      box.innerHTML = `<span class="who">SIAGA NUSA</span><p class="decline">Gagal menghubungi server: ${esc(e.message)}</p>`;
+    } finally {
+      askInput.disabled = askSend.disabled = false; askInput.focus(); scrollAsk();
+    }
+  }
+  $('#askForm').addEventListener('submit', (e) => { e.preventDefault(); ask(askInput.value); });
+  $('#askSuggest').addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON') ask(e.target.textContent); });
 
   /* ---------- routing ---------- */
   const views = ['dasbor', 'peta', 'status'];

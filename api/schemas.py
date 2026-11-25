@@ -232,3 +232,43 @@ class RainOutlook(BaseModel):
     model_name: str | None
     model_version: str | None
     cities: list[RainChance]
+
+
+# ---------------------------------------------------------------------------
+# Agen Tanya
+# ---------------------------------------------------------------------------
+class ChatTurn(BaseModel):
+    role: str = Field(pattern="^(user|model)$")
+    text: str = Field(max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=8,
+                                    description="Giliran sebelumnya (maks 8), dikirim ulang oleh klien")
+
+
+class AgentStep(BaseModel):
+    tool: str
+    args: dict
+    ms: int
+    ok: bool
+    label: str | None
+    error: str | None
+
+
+class GuideSource(BaseModel):
+    title: str
+    publisher: str
+    year: int | None
+    pages: str
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    status: str = Field(description="ok | cached | fallback (mode hemat tanpa LLM) | blocked | error")
+    steps: list[AgentStep]
+    sources: list[GuideSource]
+    checks: dict | None = Field(description="Hasil validator: angka tanpa dasar di hasil tool, istilah status resmi")
+    model: str | None
+    duration_ms: int

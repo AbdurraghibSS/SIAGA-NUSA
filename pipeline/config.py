@@ -30,7 +30,26 @@ class Settings(BaseSettings):
     # Kunci untuk endpoint admin API (mis. menjalankan ulang pipeline). Kosong = endpoint dimatikan.
     api_key: str | None = None
 
-    model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", case_sensitive=False, extra="ignore")
+    # Agen Tanya (plan §7): Gemini dengan function calling. Kunci kosong = agen dimatikan
+    # (endpoint /api/chat menjawab 503, dasbor tetap jalan).
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-3.8-flash"
+    # Dipakai berurutan kalau model utama kena 429 (kuota gratis habis). Dipisah koma.
+    gemini_fallback_models: str = "gemini-3.5-flash-lite"
+    agent_cache_ttl_s: int = 600       # pertanyaan sama (tanpa riwayat) dijawab dari cache selama 10 menit
+    agent_max_rounds: int = 5          # maksimal putaran function calling per pertanyaan
+    agent_timeout_s: float = 30.0      # batas total satu pertanyaan
+    agent_rate_per_min: int = 10       # pertanyaan per menit per alamat IP
+
+    # RAG: PDF panduan kesiapsiagaan (tidak di-commit, taruh di docs/) → vector DB Qdrant.
+    knowledge_dir: Path = REPO_ROOT / "docs"
+    qdrant_url: str = "http://127.0.0.1:6333"
+    qdrant_collection: str = "siaganusa-panduan"
+    embed_model: str = "intfloat/multilingual-e5-small"  # lokal, lihat pipeline/knowledge.py
+
+    # env_ignore_empty: baris kosong di .env (mis. "GEMINI_MODEL=") tidak menimpa default.
+    model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", case_sensitive=False, extra="ignore",
+                                      env_ignore_empty=True)
 
     @property
     def snapshot_dir(self) -> Path:

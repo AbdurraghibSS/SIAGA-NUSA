@@ -12,6 +12,7 @@
 --   flood_reports           ETL: laporan banjir PetaBencana Jabodetabek + penanda latihan/uji
 --   quarantine              baris yang ditolak validasi, disimpan untuk diperiksa
 --   ingest_runs             log setiap job pipeline (untuk halaman Status)
+--   agent_logs              log agen Tanya: pertanyaan, tool yang dipanggil, durasi, token
 
 CREATE EXTENSION IF NOT EXISTS postgis;
 
@@ -160,3 +161,21 @@ CREATE TABLE IF NOT EXISTS ingest_runs (
     detail         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ingest_runs_job ON ingest_runs (job, started_at DESC);
+
+-- Potongan RAG (panduan BNPB/BMKG/BPBD) tidak di sini, tetapi di vector DB Qdrant
+-- (koleksi siaganusa-panduan, lihat pipeline/knowledge.py).
+CREATE TABLE IF NOT EXISTS agent_logs (
+    id             BIGSERIAL PRIMARY KEY,
+    asked_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    question       TEXT NOT NULL,
+    status         TEXT NOT NULL,             -- ok | blocked | error | unavailable
+    model          TEXT,
+    rounds         INTEGER NOT NULL DEFAULT 0,
+    tools          JSONB NOT NULL DEFAULT '[]', -- [{name, args, ms, ok}]
+    duration_ms    INTEGER,
+    input_tokens   INTEGER,
+    output_tokens  INTEGER,
+    checks         JSONB,                     -- hasil validator jawaban
+    detail         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_logs_time ON agent_logs (asked_at DESC);

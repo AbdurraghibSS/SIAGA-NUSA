@@ -17,6 +17,9 @@ data/
 snapshots/
 mlruns/
 mlartifacts/
+
+# Sumber RAG (PDF BNPB/BPBD): taruh lokal di docs/, tidak di-commit
+docs/*.pdf
 *.parquet
 *.joblib
 

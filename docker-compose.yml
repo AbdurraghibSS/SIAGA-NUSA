@@ -1,4 +1,4 @@
-# SIAGA NUSA lokal · db (PostGIS) + backend (FastAPI) + frontend (nginx).
+# SIAGA NUSA lokal · db (PostGIS) + qdrant (vector DB untuk RAG) + backend (FastAPI) + frontend (nginx).
 #   docker compose up -d --build     → dasbor http://localhost:8010 · API docs http://localhost:8010/docs
 #
 # network_mode: host karena firewall laptop (ufw + VPN kantor) memblokir
@@ -24,6 +24,20 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # Vector DB untuk RAG agen Tanya: potongan panduan BNPB/BMKG/BPBD + embedding Gemini.
+  # Diisi job `python -m pipeline.run knowledge` dari host. HTTP 6333, gRPC 6334, hanya localhost.
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    network_mode: host
+    environment:
+      QDRANT__SERVICE__HOST: 127.0.0.1
+      QDRANT__SERVICE__HTTP_PORT: ${QDRANT_PORT:-6333}
+      QDRANT__SERVICE__GRPC_PORT: ${QDRANT_GRPC_PORT:-6334}
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -34,14 +48,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql+psycopg://siaga:${POSTGRES_PASSWORD:-siaga_dev}@localhost:${DB_PORT:-5434}/siaga_nusa
       SERVE_WEB: "false"
       API_KEY: ${API_KEY:-}
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://127.0.0.1:5000}
+      QDRANT_URL: http://127.0.0.1:${QDRANT_PORT:-6333}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-gemini-3.5-flash-lite}
     command: ["uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "${API_PORT:-8011}"]
     volumes:
-      - ./data:/app/data       # data pipeline (snapshot, arsip) dipakai bersama dengan host
+      - ./data:/app/data       # data pipeline (snapshot, arsip) + model embedding data/models, dipakai bersama host
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(urllib.request.urlopen('http://127.0.0.1:${API_PORT:-8011}/health', timeout=3).status != 200)"]
       interval: 15s
@@ -72,3 +92,4 @@ services:
 
 volumes:
   pgdata:
+  qdrant_data:
