@@ -10,6 +10,7 @@
 --   river_points            titik pantau sungai: satu sel GloFAS per kota pilot
 --   river_daily             ETL: debit harian GloFAS (riwayat + prakiraan) per titik
 --   flood_reports           ETL: laporan banjir PetaBencana Jabodetabek + penanda latihan/uji
+--   weather_alerts          RESMI BMKG: peringatan dini cuaca (nowcast CAP) + poligon wilayah
 --   quarantine              baris yang ditolak validasi, disimpan untuk diperiksa
 --   ingest_runs             log setiap job pipeline (untuk halaman Status)
 --   agent_logs              log agen Tanya: pertanyaan, tool yang dipanggil, durasi, token
@@ -179,3 +180,28 @@ CREATE TABLE IF NOT EXISTS agent_logs (
     detail         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_agent_logs_time ON agent_logs (asked_at DESC);
+
+-- Peringatan dini cuaca BMKG (nowcast, CAP 1.2). Satu baris per dokumen CAP; isi tidak pernah
+-- diubah (BMKG menerbitkan identifier baru untuk pembaruan). Aktif = expires_at > NOW().
+CREATE TABLE IF NOT EXISTS weather_alerts (
+    identifier       TEXT PRIMARY KEY,
+    msg_type         TEXT,                    -- Alert | Update | Cancel
+    sent_at          TIMESTAMPTZ NOT NULL,
+    effective_at     TIMESTAMPTZ NOT NULL,
+    expires_at       TIMESTAMPTZ NOT NULL,
+    event            TEXT,                    -- mis. "Hujan Lebat dan Petir"
+    urgency          TEXT,                    -- tingkat CAP apa adanya (BUKAN Waspada/Siaga/Awas)
+    severity         TEXT,
+    certainty        TEXT,
+    headline         TEXT,
+    description      TEXT,
+    area_desc        TEXT,                    -- wilayah kerja kantor BMKG, bukan batas administratif
+    province         TEXT,
+    places           TEXT[],                  -- kecamatan yang disebut di description
+    infographic_url  TEXT,
+    cap_url          TEXT,
+    fetched_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    geom             GEOMETRY(MultiPolygon, 4326)
+);
+CREATE INDEX IF NOT EXISTS idx_weather_alerts_expires ON weather_alerts (expires_at DESC);
+CREATE INDEX IF NOT EXISTS idx_weather_alerts_geom ON weather_alerts USING GIST (geom);

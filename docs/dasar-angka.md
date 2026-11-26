@@ -238,3 +238,17 @@ Ditetapkan manual, lalu diuji: 231 kombinasi lain dan bobot hasil belajar mesin 
 
 **"Apakah ini sistem peringatan dini?"**
 Bukan. Level Rendah/Sedang/Tinggi sengaja tidak memakai istilah *Waspada/Siaga/Awas*. Peringatan resmi tetap dari BMKG dan BPBD.
+
+---
+
+## 8. Peringatan dini BMKG (nowcast)
+
+| Angka | Nilai | Asal | Alasan |
+|---|---|---|---|
+| Radius kota | 30 km dari titik data kota | ✋ Pilihan tim | Satu titik kelurahan mewakili kota; 30 km kira-kira mencakup wilayah kota dan pinggirannya. Contoh 26 Nov 2026: peringatan "Jakarta" (kecamatan di Tangerang) berjarak 14,4 km dari titik Kemayoran, ikut tampil |
+| Interval pengecekan | 15 menit | ✋ Pilihan tim | Nowcast BMKG berlaku 1–3 jam; 15 menit cukup cepat tanpa membebani server BMKG (RSS kecil, CAP hanya yang baru) |
+| Batas data basi | 45 menit | ✋ Pilihan tim | Tiga kali interval pengecekan gagal berturut-turut → UI dan agen memberi catatan "mungkin sudah berubah" |
+| Tingkat peringatan | urgency/severity/certainty CAP apa adanya | 🟢 Resmi BMKG | Nowcast BMKG tidak memakai Waspada/Siaga/Awas, jadi SIAGA NUSA tidak memetakan tingkat CAP ke istilah status |
+
+Kode: [`pipeline/ingest/bmkg_alerts.py`](../pipeline/ingest/bmkg_alerts.py), `warnings()` di [`api/main.py`](../api/main.py).
+

@@ -272,3 +272,38 @@ class ChatResponse(BaseModel):
     checks: dict | None = Field(description="Hasil validator: angka tanpa dasar di hasil tool, istilah status resmi")
     model: str | None
     duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# Peringatan dini cuaca BMKG (nowcast)
+# ---------------------------------------------------------------------------
+class WeatherAlert(BaseModel):
+    identifier: str
+    event: str | None
+    headline: str | None
+    effective_at: str
+    expires_at: str
+    distance_km: float = Field(description="Jarak poligon peringatan ke titik data kota (0 = titik di dalam wilayah)")
+    places: list[str] = Field(description="Kecamatan yang disebut BMKG (maks 15)")
+    n_places: int
+    urgency: str | None = Field(description="Tingkat CAP apa adanya; nowcast BMKG tidak memakai Waspada/Siaga/Awas")
+    severity: str | None
+    certainty: str | None
+    infographic_url: str | None
+    cap_url: str | None
+
+
+class CityWarnings(BaseModel):
+    slug: str
+    city: str
+    alerts: list[WeatherAlert]
+
+
+class WarningsOverview(BaseModel):
+    checked_at: str
+    last_fetch_at: str | None = Field(description="Terakhir RSS BMKG berhasil dibaca")
+    stale: bool = Field(description="True kalau RSS tidak terbaca > 45 menit")
+    radius_km: int
+    n_active_national: int
+    cities: list[CityWarnings]
+    geojson: dict = Field(description="FeatureCollection poligon peringatan aktif di sekitar kota pilot (untuk peta)")
