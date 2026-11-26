@@ -7,6 +7,8 @@
 Job:
   init       buat tabel + isi lokasi pilot
   sync       ambil snapshot terbaru dari branch data-snapshots
+  snapshot   ambil snapshot BMKG + Open-Meteo langsung (dipakai scheduler; tanpa git)
+  alerts     peringatan dini cuaca BMKG (nowcast CAP) → weather_alerts, tiap 15 menit di scheduler
   raw        ELT: muat envelope mentah ke raw_payloads (jsonb)
   forecasts  ETL: bersihkan BMKG & Open-Meteo di pandas lalu muat
   history    ETL: hujan harian ERA5 dari data/raw/open-meteo
@@ -42,6 +44,7 @@ from pipeline.transform.forecast import (bmkg_frame, era5_frame, era5_items_fram
                                          raw_payload_frame, read_envelopes)
 
 log = logging.getLogger("pipeline")
+SINCE: date | None = None  # diisi --since-days; None = baca seluruh arsip snapshot
 
 ERA5_FILES = {
     "era5": "archive_daily_era5_2017_2026.json",
@@ -55,10 +58,66 @@ def job_sync() -> None:
         run.loaded = run.read
 
 
+def job_snapshot() -> None:
+    """Ambil snapshot BMKG + Open-Meteo LANGSUNG ke data/snapshots (kode yang sama dengan GitHub Actions).
+
+    Dipakai scheduler di server/container, yang tidak punya akses git ke branch data-snapshots.
+    Branch tetap berguna sebagai arsip saat server mati; keduanya bisa dimuat bersama karena
+    kunci raw_payloads (sumber, lokasi, waktu ambil) unik."""
+    from pipeline.ingest import snapshot
+
+    with db.JobRun("snapshot_local") as run:
+        before = sum(1 for _ in settings.snapshot_dir.rglob("*.json")) if settings.snapshot_dir.exists() else 0
+        code = snapshot.main(["--out", str(settings.snapshot_dir)])
+        after = sum(1 for _ in settings.snapshot_dir.rglob("*.json"))
+        run.read = run.loaded = after - before
+        if code != 0:
+            raise RuntimeError("semua panggilan BMKG dan Open-Meteo gagal")
+
+
+def job_alerts() -> None:
+    """Peringatan dini cuaca BMKG: RSS daftar aktif → CAP yang belum ada di DB → weather_alerts (PostGIS)."""
+    from pipeline.ingest import bmkg_alerts as ba
+
+    with db.JobRun("alerts_bmkg") as run:
+        session = make_session()
+        resp = session.get(ba.RSS_URL, timeout=30)
+        resp.raise_for_status()
+        items = ba.parse_rss(resp.text)
+        run.read = len(items)
+        with db.engine.connect() as conn:
+            known = set(conn.execute(text("SELECT identifier FROM weather_alerts")).scalars())
+        rows, bad = [], []
+        for it in items:
+            if it["guid"] in known:
+                continue
+            try:
+                cap = session.get(it["link"], timeout=30)
+                cap.raise_for_status()
+                rows.append(ba.parse_cap(cap.text, it["link"]))
+            except Exception as exc:  # satu CAP rusak tidak menggagalkan yang lain
+                bad.append({**it, "reason": f"{type(exc).__name__}: {str(exc)[:200]}"})
+        if rows:
+            with db.engine.begin() as conn:
+                run.loaded = sum(conn.execute(text("""
+                    INSERT INTO weather_alerts (identifier, msg_type, sent_at, effective_at, expires_at, event, urgency,
+                        severity, certainty, headline, description, area_desc, province, places, infographic_url, cap_url, geom)
+                    VALUES (:identifier, :msg_type, :sent_at, :effective_at, :expires_at, :event, :urgency, :severity,
+                        :certainty, :headline, :description, :area_desc, :province, :places, :infographic_url, :cap_url,
+                        CASE WHEN CAST(:geom_wkt AS text) IS NULL THEN NULL ELSE
+                          ST_Multi(ST_CollectionExtract(ST_MakeValid(ST_GeomFromText(CAST(:geom_wkt AS text), 4326)), 3)) END)
+                    ON CONFLICT (identifier) DO NOTHING
+                """), r).rowcount for r in rows)
+        run.rejected = len(bad)
+        if bad:
+            db.quarantine("alerts_bmkg", pd.DataFrame(bad))
+        run.detail = f"{len(items)} aktif di RSS, {len(rows)} CAP baru"
+
+
 def job_raw() -> None:
     for source in ("bmkg", "open-meteo"):
         with db.JobRun(f"raw_{source}") as run:
-            envelopes = read_envelopes(settings.snapshot_dir, source)
+            envelopes = read_envelopes(settings.snapshot_dir, source, since=SINCE)
             run.read = len(envelopes)
             run.loaded = db.load_dataframe(raw_payload_frame(envelopes), "raw_payloads",
                                            ("source", "location", "fetched_at"), casts={"payload": "jsonb"})
@@ -66,7 +125,7 @@ def job_raw() -> None:
 
 def job_forecasts() -> None:
     with db.JobRun("forecast_bmkg") as run:
-        envelopes = read_envelopes(settings.snapshot_dir, "bmkg")
+        envelopes = read_envelopes(settings.snapshot_dir, "bmkg", since=SINCE)
         clean, rejects = bmkg_frame(envelopes)
         run.read = len(envelopes)
         run.loaded = db.load_dataframe(clean, "forecast_bmkg", ("location", "analysis_at", "valid_at"))
@@ -75,7 +134,7 @@ def job_forecasts() -> None:
         run.detail = f"{len(clean)} baris unik dari {len(envelopes)} snapshot"
 
     with db.JobRun("forecast_openmeteo") as run:
-        envelopes = read_envelopes(settings.snapshot_dir, "open-meteo")
+        envelopes = read_envelopes(settings.snapshot_dir, "open-meteo", since=SINCE)
         clean, rejects = openmeteo_frame(envelopes)
         run.read = len(envelopes)
         run.loaded = db.load_dataframe(clean, "forecast_hourly", ("location", "issued_at", "valid_at"))
@@ -214,6 +273,8 @@ def job_views() -> None:
 JOBS = {
     "init": db.init_db,
     "sync": job_sync,
+    "snapshot": job_snapshot,
+    "alerts": job_alerts,
     "raw": job_raw,
     "forecasts": job_forecasts,
     "history": job_history,
@@ -224,15 +285,19 @@ JOBS = {
     "views": job_views,
     "knowledge": job_knowledge,
 }
-ALL = ["init", "sync", "raw", "forecasts", "history", "floods", "archive", "rivers", "views", "predict"]
+ALL = ["init", "sync", "alerts", "raw", "forecasts", "history", "floods", "archive", "rivers", "views", "predict"]
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Pipeline SIAGA NUSA")
     parser.add_argument("jobs", nargs="+", choices=[*JOBS, "all"], help="job yang dijalankan, berurutan")
+    parser.add_argument("--since-days", type=int, default=None,
+                        help="raw/forecasts hanya membaca snapshot N hari terakhir (scheduler: 2)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-7s %(message)s")
 
+    global SINCE
+    SINCE = (datetime.now(ZoneInfo("UTC")).date() - timedelta(days=args.since_days)) if args.since_days else None
     jobs = ALL if "all" in args.jobs else args.jobs
     if "init" not in jobs:
         db.init_db()  # tabel ingest_runs harus ada sebelum job lain mencatat dirinya

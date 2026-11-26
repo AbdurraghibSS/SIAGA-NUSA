@@ -9,6 +9,7 @@ Langkah yang sama untuk tiap sumber:
 """
 
 import json
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -50,9 +51,14 @@ OPENMETEO_COLUMNS = {
 # ---------------------------------------------------------------------------
 # Extract
 # ---------------------------------------------------------------------------
-def read_envelopes(snapshot_dir: Path, source: str) -> list[dict]:
-    """Baca semua envelope `<dir>/<source>/<tanggal>/<jam>Z/<lokasi>.json`, urut waktu."""
+def read_envelopes(snapshot_dir: Path, source: str, since: date | None = None) -> list[dict]:
+    """Baca envelope `<dir>/<source>/<tanggal>/<jam>Z/<lokasi>.json`, urut waktu.
+
+    `since`: hanya folder tanggal (UTC) ≥ since. Dipakai scheduler supaya run per jam tidak
+    membaca ulang seluruh arsip; baris lama sudah ada di DB (load idempotent)."""
     paths = sorted(Path(snapshot_dir, source).glob("*/*/*.json"))
+    if since is not None:
+        paths = [p for p in paths if p.parent.parent.name >= since.isoformat()]
     return [json.loads(p.read_text(encoding="utf-8")) for p in paths]
 
 

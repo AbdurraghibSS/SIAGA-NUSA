@@ -91,3 +91,15 @@ def test_era5_location_order_mismatch_raises():
     items[0], items[6] = items[6], items[0]  # Jakarta ↔ Medan
     with pytest.raises(ValueError, match="koordinat"):
         era5_items_frame(items, PILOT_LOCATIONS, "era5")
+
+
+def test_read_envelopes_since_skips_older_date_folders(tmp_path):
+    import json
+    from datetime import date
+    from pipeline.transform.forecast import read_envelopes
+    for day in ("2026-11-20", "2026-11-25", "2026-11-26"):
+        f = tmp_path / "bmkg" / day / "0000Z" / "jakarta.json"
+        f.parent.mkdir(parents=True)
+        f.write_text(json.dumps({"day": day}))
+    assert [e["day"] for e in read_envelopes(tmp_path, "bmkg", since=date(2026, 11, 25))] == ["2026-11-25", "2026-11-26"]
+    assert len(read_envelopes(tmp_path, "bmkg")) == 3

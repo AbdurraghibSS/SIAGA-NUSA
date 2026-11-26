@@ -84,7 +84,7 @@ Status siaga dan peringatan resmi **hanya** berasal dari data BMKG dan diputuska
 
 | Sumber · *Source* | Data | Lisensi · *License* |
 |---|---|---|
-| [BMKG](https://data.bmkg.go.id/) | Prakiraan cuaca per kelurahan, peringatan dini cuaca · *Per-village forecasts, weather warnings* | Wajib mencantumkan BMKG · *BMKG attribution required* |
+| [BMKG](https://data.bmkg.go.id/) | Prakiraan cuaca per kelurahan, peringatan dini cuaca nowcast ([RSS/CAP](https://www.bmkg.go.id/alerts/nowcast/id)) · *Per-village forecasts, nowcast weather warnings (CAP)* | Wajib mencantumkan BMKG · *BMKG attribution required* |
 | [Open-Meteo](https://open-meteo.com/) | Prakiraan per jam, historis ERA5, *historical forecast*, *previous runs*, debit sungai GloFAS · *Hourly forecasts, ERA5 history, historical forecasts, previous runs, GloFAS river discharge* | CC BY 4.0 |
 | [PetaBencana.id](https://petabencana.id/) | Laporan banjir warga · *Citizen flood reports* | Atribusi · *Attribution* |
 | [RainViewer](https://www.rainviewer.com/) | Lapisan radar hujan di peta (observasi, cakupan Indonesia terbatas) · *Rain radar map layer* | Atribusi · *Attribution* |
@@ -99,8 +99,8 @@ pip install -e ".[dev]"
 cp .env.example .env
 pytest -q
 
-docker compose up -d --build               # db + qdrant + backend + frontend, ikut naik setiap Docker hidup
-python -m pipeline.run all                 # sync snapshot → muat → bersihkan → view SQL → prediksi
+docker compose up -d --build               # db + qdrant + mlflow + scheduler + backend + frontend, ikut naik setiap Docker hidup
+python -m pipeline.run all                 # muat ulang penuh sekali (setelah itu scheduler yang menjaga data tetap segar)
 python -m pipeline.run knowledge           # RAG: PDF panduan di docs/ → embedding Gemini → Qdrant
 ```
 
@@ -108,6 +108,8 @@ python -m pipeline.run knowledge           # RAG: PDF panduan di docs/ → embed
 |---|---|---|
 | `db` | PostgreSQL 16 + PostGIS | `localhost:5434` |
 | `qdrant` | Vector DB Qdrant: potongan panduan resmi + embedding untuk RAG | `127.0.0.1:6333` |
+| `mlflow` | MLflow 3.18: eksperimen + registry Model A (`siaganusa-hujan@champion`), data di `data/mlflow/` | `127.0.0.1:5000` |
+| `scheduler` | APScheduler ([`pipeline/scheduler.py`](pipeline/scheduler.py)): peringatan dini BMKG tiap 15 menit, prakiraan tiap jam (menit ke-5), data harian + prediksi Model A 05.30 WIB | — |
 | `backend` | FastAPI: `/api`, `/api/chat` (agen), `/health`, `/docs` | `127.0.0.1:8011` |
 | `frontend` | nginx: dasbor `web/`, meneruskan `/api` & `/docs` ke backend | **http://localhost:8010** |
 
@@ -122,6 +124,8 @@ Snapshot prakiraan dikumpulkan otomatis oleh GitHub Actions (dijadwalkan tiap ja
 | Job | Pola · *Pattern* | Isi · *What it does* |
 |---|---|---|
 | `sync` | Extract | `git fetch` + `git archive` branch `data-snapshots` → `data/snapshots/` |
+| `alerts` | ETL (PostGIS) | Peringatan dini BMKG: RSS → dokumen CAP baru → `weather_alerts` dengan poligon; dicocokkan ke kota pilot dengan `ST_DWithin` 30 km. Tiap 15 menit · *BMKG nowcast warnings with polygons, matched to pilot cities spatially* |
+| `snapshot` | Extract | Ambil BMKG + Open-Meteo langsung (kode yang sama dengan GitHub Actions), dipakai scheduler tanpa git · *Direct fetch used by the scheduler* |
 | `raw` | ELT | Envelope JSON apa adanya → `raw_payloads` (`jsonb`), termasuk yang gagal · *Raw envelopes, failures included* |
 | `forecasts` | ETL (pandas) | Ratakan JSON, konversi tipe & zona waktu, buang duplikat terbitan BMKG, nilai di luar rentang → `quarantine`. Nilai kosong tidak diisi tebakan · *Flatten, cast, dedupe, quarantine out-of-range values; missing values are never imputed* |
 | `history` | ETL | Hujan harian ERA5 dari arsip + susul hari yang belum ada lewat API · *ERA5 daily backfill + incremental catch-up* |
@@ -132,7 +136,7 @@ Snapshot prakiraan dikumpulkan otomatis oleh GitHub Actions (dijadwalkan tiap ja
 | `views` | SQL | CTE, window function (`DENSE_RANK`, `SUM OVER`), `FILTER`, `CASE WHEN` di [`sql/views.sql`](sql/views.sql) |
 | `knowledge` | RAG | PDF panduan → potongan 200 kata (tumpang tindih 40) → vektor dense `multilingual-e5-small` (384 dim) + sparse BM25, keduanya lokal (FastEmbed, tanpa kuota API) → Qdrant. Pencarian hybrid (RRF): 7/8 relevan di top-3 vs dense 5/8, BM25 6/8. Dijalankan manual · *Hybrid dense + BM25 local embeddings in Qdrant; run manually* |
 
-Semua job idempotent (`ON CONFLICT`), dan setiap eksekusi tercatat di `ingest_runs` untuk halaman Status.<br>
+Semua job idempotent (`ON CONFLICT`), dan setiap eksekusi tercatat di `ingest_runs` untuk halaman Status. Scheduler hanya membaca snapshot 2 hari terakhir (`--since-days 2`, ±2 detik per jam), dan `predict` menyimpan salinan model champion di `data/models/` sehingga tetap jalan walau MLflow mati.<br>
 *All jobs are idempotent (`ON CONFLICT`), and every run is logged in `ingest_runs` for the Status page.*
 
 📄 Penjelasan lengkap · *Full walkthrough*: [`docs/data-processing.md`](docs/data-processing.md)<br>
@@ -140,8 +144,8 @@ Semua job idempotent (`ON CONFLICT`), dan setiap eksekusi tercatat di `ingest_ru
 
 ### 💬 Agen Tanya · *Ask agent*
 
-`POST /api/chat` → Gemini (`gemini-3.8-flash`) memilih dari 8 tool read-only, maksimal 5 putaran, lalu menjawab dengan label sumber. Kodenya di [`api/agent/`](api/agent/).<br>
-*Gemini picks from 8 read-only tools (max 5 rounds) and answers with source labels.*
+`POST /api/chat` → Gemini (`gemini-3.8-flash`) memilih dari 9 tool read-only, maksimal 5 putaran, lalu menjawab dengan label sumber. Kodenya di [`api/agent/`](api/agent/).<br>
+*Gemini picks from 9 read-only tools (max 5 rounds) and answers with source labels.*
 
 | Tool | Data |
 |---|---|
@@ -152,6 +156,7 @@ Semua job idempotent (`ON CONFLICT`), dan setiap eksekusi tercatat di `ingest_ru
 | `get_river_conditions` | Debit sungai GloFAS |
 | `get_flood_reports` | Laporan warga PetaBencana (Jabodetabek) |
 | `get_rain_history` | Hujan ERA5 yang sudah terjadi |
+| `get_official_warnings` | Peringatan dini cuaca resmi BMKG di sekitar kota, plus cek satu kecamatan (nasional) |
 | `search_preparedness_guide` | RAG: 10 panduan resmi (BNPB, BMKG, BPBD DKI, Kemenkes, ESDM) di Qdrant |
 
 Pengaman · *Guardrails*: pola prompt injection ditolak sebelum memanggil Gemini, teks warga dibungkus `<data_warga>`, argumen tool divalidasi (kota di luar pilot → error terstruktur), tidak ada tool tulis/SQL bebas, setiap angka di jawaban dicocokkan dengan hasil tool, istilah Waspada/Siaga/Awas ditandai, batas 10 pertanyaan/menit/IP, dan setiap percakapan tercatat di `agent_logs`.
@@ -170,6 +175,7 @@ Proyek ini sedang dikembangkan (30 Oktober – 23 Desember 2026).<br>
 - [x] Debit sungai GloFAS + indeks risiko banjir (API) · *GloFAS river discharge + flood risk index (API)*
 - [x] Model A dilatih & terdaftar di MLflow (`siaganusa-hujan@champion`), [notebook 04](notebooks/04_model_a_hujan.ipynb) · *Model A trained & registered in MLflow*
 - [x] Prediksi Model A di dasbor: peluang + kelas Rendah/Sedang/Tinggi (job `predict`) · *Model A predictions on the dashboard*
+- [x] Peringatan dini cuaca BMKG (nowcast CAP + PostGIS) di dasbor, peta, dan agen · *BMKG nowcast warnings in dashboard, map, and agent*
 - [ ] Model B (bila lolos *gate*) · *Model B (if it passes the gate)*
 - [x] Agen Gemini + 8 tools + RAG panduan resmi di Qdrant · *Gemini agent + 8 tools + RAG on official guides in Qdrant*
 - [x] Widget Tanya di dasbor dengan "Lihat langkah agen" · *Ask widget with agent steps*
