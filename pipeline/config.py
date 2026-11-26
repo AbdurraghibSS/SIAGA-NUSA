@@ -35,10 +35,12 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.8-flash"
     # Dipakai berurutan kalau model utama kena 429 (kuota gratis habis). Dipisah koma.
-    gemini_fallback_models: str = "gemini-3.5-flash-lite"
+    # Tiap model punya kapasitas sendiri: saat 3.8 kena 503 (25 Nov 2026), 3.6 dan 3.5-lite tetap jalan.
+    gemini_fallback_models: str = "gemini-3.6-flash,gemini-3.5-flash-lite"
     agent_cache_ttl_s: int = 600       # pertanyaan sama (tanpa riwayat) dijawab dari cache selama 10 menit
     agent_max_rounds: int = 5          # maksimal putaran function calling per pertanyaan
     agent_timeout_s: float = 30.0      # batas total satu pertanyaan
+    gemini_call_timeout_s: float = 12.0  # per panggilan; model lambat/504 cepat dilepas ke model cadangan
     agent_rate_per_min: int = 10       # pertanyaan per menit per alamat IP
 
     # RAG: PDF panduan kesiapsiagaan (tidak di-commit, taruh di docs/) → vector DB Qdrant.

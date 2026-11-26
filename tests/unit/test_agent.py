@@ -241,6 +241,8 @@ def test_non_quota_errors_are_not_swallowed(chain):
     ("Nanti malam Jakarta hujan lebat nggak?", "get_weather_forecast"),
     ("Besok hujan deras di mana?", "get_rain_chance_tomorrow"),
     ("Ada laporan genangan minggu ini?", "get_flood_reports"),
+    ("Ada peringatan dini BMKG di Jogja hari ini?", "get_official_warnings"),
+    ("Beneran Jakarta status siaga banjir?", "get_official_warnings"),
 ])
 def test_fallback_routes_intent_to_tool(monkeypatch, q, tool):
     from api.agent import fallback
@@ -257,3 +259,73 @@ def test_guide_result_with_four_long_chunks_fits_without_truncation(monkeypatch)
     monkeypatch.setattr(knowledge, "search", lambda q, k=4: [hit] * k)
     res, _ = tools.execute("search_preparedness_guide", {"query": "tas siaga"})
     assert res["ok"] and len(res["potongan"]) == 4 and "terpotong" not in res
+
+
+def test_overloaded_model_503_also_switches_to_fallback(chain):
+    class Busy(QuotaClient):
+        def generate_content(self, model, contents, config):
+            if model == "utama":
+                self.models_called.append(model)
+                raise RuntimeError("503 UNAVAILABLE. This model is currently experiencing high demand.")
+            return super().generate_content(model, contents, config)
+    client = Busy([_resp(text="Jawaban.")], exhausted=set())
+    res = core.run("Hujan besok?", client=client, execute=fake_execute)
+    assert res.model == "cadangan" and core._cooldown["utama"] > 0
+
+
+def test_fallback_snippet_centers_on_rare_query_word():
+    from api.agent.fallback import snippet
+    text = "Longsor terjadi karena hujan. " * 30 + "Leptospirosis disebabkan bakteri dari kencing tikus. " + "Banjir. " * 30
+    out = snippet(text, "Bagaimana mencegah leptospirosis setelah banjir?", size=200)
+    assert "Leptospirosis disebabkan" in out and out.startswith("…")
+
+
+def test_rare_query_word_outranks_common_ones():
+    from api.agent.fallback import rank_by_rare_words
+    ps = [{"teks": "Vetiver mencegah longsor dan banjir."}, {"teks": "Leptospirosis setelah banjir dari tikus."},
+          {"teks": "Banjir bandang."}, {"teks": "Mencegah banjir dengan resapan."}]
+    corpus_idf = {"mencegah": 0.5, "banjir": 0.1, "leptospirosis": 4.0}.get  # dari korpus, bukan dari 4 potongan
+    ranked = rank_by_rare_words(ps, "Bagaimana mencegah leptospirosis setelah banjir?", idf=lambda w: corpus_idf(w, 0))
+    assert ranked[0]["teks"].startswith("Leptospirosis")
+
+
+def test_snippet_never_cuts_first_word_when_no_sentence_before():
+    from api.agent.fallback import snippet
+    text = "Pencegahan leptospirosis: buang sampah pada tempatnya dan bersihkan lingkungan. " * 10
+    assert snippet(text, "leptospirosis", size=120).startswith("Pencegahan")
+
+
+def test_stale_rain_outlook_carries_explicit_warning(monkeypatch):
+    from api import main
+    from api.schemas import RainChance, RainOutlook
+    stale = RainOutlook(target_date="2026-11-24", stale=True, model_name="siaganusa-hujan", model_version="1",
+                        cities=[RainChance(slug="bogor", city="Bogor", prob=0.4, level="Tinggi", issued_at="x")])
+    monkeypatch.setattr(main, "rain_outlook", lambda: stale)
+    res, _ = tools.execute("get_rain_chance_tomorrow", {})
+    assert "BUKAN untuk besok" in res["PERHATIAN"]
+
+
+def test_read_timeout_counts_as_busy_and_moves_on(chain):
+    class ReadTimeout(Exception):
+        pass
+
+    class Slow(QuotaClient):
+        def generate_content(self, model, contents, config):
+            if model == "utama":
+                self.models_called.append(model)
+                raise ReadTimeout("The read operation timed out")
+            return super().generate_content(model, contents, config)
+    res = core.run("Hujan besok?", client=Slow([_resp(text="Jawaban.")], exhausted=set()), execute=fake_execute)
+    assert res.model == "cadangan"
+
+
+def test_unexpected_agent_error_falls_back_instead_of_503(monkeypatch):
+    from fastapi.testclient import TestClient
+    from api import main
+    from api.agent import core as agent_core, fallback
+    monkeypatch.setattr(main.settings, "gemini_api_key", "x")
+    monkeypatch.setattr(main, "_log_agent", lambda *a, **k: None)
+    monkeypatch.setattr(agent_core, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(fallback, "answer", lambda q, reason="quota": core.AgentResult(answer=f"hemat:{reason}", status="fallback"))
+    r = TestClient(main.app).post("/api/chat", json={"message": "Jakarta hujan?"})
+    assert r.status_code == 200 and r.json()["answer"] == "hemat:error"

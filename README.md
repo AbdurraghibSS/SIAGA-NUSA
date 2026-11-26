@@ -156,7 +156,7 @@ Semua job idempotent (`ON CONFLICT`), dan setiap eksekusi tercatat di `ingest_ru
 
 Pengaman · *Guardrails*: pola prompt injection ditolak sebelum memanggil Gemini, teks warga dibungkus `<data_warga>`, argumen tool divalidasi (kota di luar pilot → error terstruktur), tidak ada tool tulis/SQL bebas, setiap angka di jawaban dicocokkan dengan hasil tool, istilah Waspada/Siaga/Awas ditandai, batas 10 pertanyaan/menit/IP, dan setiap percakapan tercatat di `agent_logs`.
 
-Hemat kuota Gemini gratis · *Free-tier quota*: (1) pertanyaan pembuka yang sama dijawab dari cache 10 menit; (2) model kena 429 → istirahat 60 detik, pindah ke `gemini-3.5-flash-lite`; (3) semua model habis atau kunci kosong → **mode hemat** tanpa LLM ([`api/agent/fallback.py`](api/agent/fallback.py)): maksud pertanyaan dikenali dengan kata kunci, tool yang sama dipanggil, jawaban dari template. Embedding RAG lokal, jadi pencarian panduan tidak pernah memakai kuota.
+Hemat kuota Gemini gratis · *Free-tier quota*: (1) pertanyaan pembuka yang sama dijawab dari cache 10 menit; (2) model kena 429 (kuota) atau 503/504 (server ramai) → model itu diistirahatkan, pindah ke `gemini-3.6-flash` lalu `gemini-3.5-flash-lite`; (3) semua model habis atau kunci kosong → **mode hemat** tanpa LLM ([`api/agent/fallback.py`](api/agent/fallback.py)): maksud pertanyaan dikenali dengan kata kunci, tool yang sama dipanggil, jawaban dari template. Embedding RAG lokal, jadi pencarian panduan tidak pernah memakai kuota.
 
 ## 🚧 Status & Roadmap
 

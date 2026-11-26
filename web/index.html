@@ -57,6 +57,14 @@ button { font: inherit; color: inherit; }
 .cities button { background: none; border: 0; padding: 4px 0; cursor: pointer; color: var(--ink-3); border-bottom: 1px solid transparent; }
 .cities button:hover { color: var(--ink-2); }
 .cities button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.cities button.has-warn::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 7px; border-radius: 50%; background: var(--mid); vertical-align: 2px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--mid) 25%, transparent); }
+.warn-box { margin-top: 16px; max-width: 72ch; border-left: 3px solid var(--mid); background: color-mix(in srgb, var(--mid) 13%, transparent); padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14.5px; }
+.warn-box .w-item + .w-item { border-top: 1px solid color-mix(in srgb, var(--mid) 30%, transparent); padding-top: 6px; }
+.warn-box .w-ev { font-weight: 700; color: var(--ink); }
+.warn-box .w-ev { display: block; }
+.warn-box .w-meta { display: block; color: var(--ink-2); }
+.warn-box a { color: var(--ink); }
+.warn-none { margin-top: 12px; font-size: 13px; color: var(--ink-3); }
 
 .fresh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
 .fresh-label { color: var(--ink-2); margin-right: 4px; }
@@ -211,7 +219,7 @@ details.how p { margin-top: 8px; }
 .leaflet-bar a { background: var(--sky); color: var(--ink); border-color: var(--rule); }
 .osm-dark { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.4); }
 .map-label.leaflet-tooltip-left, .map-label.leaflet-tooltip-right { text-align: center; }
-.layer-notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 32px; }
+.layer-notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 18px 32px; }
 .layer-notes div { border-top: 1px solid var(--rule); padding-top: 12px; font-size: 14.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 6px; }
 .layer-notes h3 { font-size: 22px; font-weight: 700; color: var(--ink); }
 
@@ -331,6 +339,8 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
             <p class="when" id="when">&nbsp;</p>
             <h1 id="headline">Memuat prakiraan…</h1>
             <p class="hero-src" id="heroSrc"></p>
+            <div class="warn-box" id="warnBox" role="status" hidden></div>
+            <p class="warn-none" id="warnNone" hidden></p>
           </div>
           <div class="total">
             <div class="total-num" id="totalNum">–<span>mm</span></div>
@@ -378,6 +388,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
             <label class="layer"><input type="checkbox" id="lyrCities" checked> Prakiraan kota</label>
             <label class="layer"><input type="checkbox" id="lyrRadar" checked> Radar hujan</label>
             <label class="layer"><input type="checkbox" id="lyrFloods" checked> Laporan banjir</label>
+            <label class="layer"><input type="checkbox" id="lyrWarn" checked> Peringatan BMKG</label>
           </div>
         </div>
         <div id="wxmap" role="region" aria-label="Peta cuaca interaktif"></div>
@@ -473,6 +484,11 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
         <h3>Laporan banjir</h3>
         <span class="tag t-warga"><b>Laporan warga</b> PetaBencana</span>
         <p>Laporan banjir terbaru di Jabodetabek, belum terverifikasi. Laporan latihan dan uji sudah disaring.</p>
+      </div>
+      <div>
+        <h3>Peringatan BMKG</h3>
+        <span class="tag t-resmi"><b>Resmi</b> BMKG nowcast</span>
+        <p id="warnNote">Wilayah peringatan dini cuaca BMKG yang sedang berlaku di sekitar kota pilot (radius 30 km). Biasanya berlaku 1–3 jam. Ikuti InfoBMKG dan BPBD setempat.</p>
       </div>
     </div>
   </section>
@@ -586,7 +602,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
 
   const bounds = [0.5, 20, 50, 100, 150, 250];
   const scalePos = (mm) => { if (mm == null || mm < 0.5) return 0; for (let i = 0; i < 5; i++) if (mm < bounds[i + 1]) return (i + (mm - bounds[i]) / (bounds[i + 1] - bounds[i])) / 5; return 1; };
-  let cities = [], sel = 0, intensity = 0.4, risk = {}, riskAt = null, rain = {}, rainMeta = null;
+  let cities = [], sel = 0, intensity = 0.4, risk = {}, riskAt = null, rain = {}, rainMeta = null, warn = null;
   const CHANCE_NOTE = { Rendah: 'di data uji, ±1 dari 70 hari seperti ini benar-benar ≥20 mm', Sedang: 'di data uji, ±1 dari 5 hari seperti ini benar-benar ≥20 mm', Tinggi: 'di data uji, ±1 dari 2 hari seperti ini benar-benar ≥20 mm' };
   const pct = (p) => p == null ? '–' : (p < 0.01 ? '<1' : Math.round(p * 100)) + '%';
   function renderChance(slug) {
@@ -740,7 +756,9 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
   }
 
   /* ---------- kesegaran data (badge) ---------- */
+  let lastStatus = null;
   function renderFresh(st) {
+    lastStatus = st;
     const src = Object.fromEntries(st.sources.map((s) => [s.source, s]));
     const badge = (name, value, cls = '', title = '') => `<span class="badge ${cls}" title="${esc(title)}"><b>${name}</b><span>${value}</span></span>`;
     const ageH = (iso) => iso ? (Date.now() - new Date(iso)) / 3600000 : Infinity;
@@ -756,7 +774,9 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     b.push(badge('ERA5', r.era5_last_date ? `s.d. ${shortDate(r.era5_last_date + 'T12:00:00+07:00')} · tertinggal ±5 hari` : 'belum ada', '', 'Reanalysis; dipakai untuk akumulasi hujan dan label Model A'));
     b.push(badge('GloFAS', r.river_last_date ? `s.d. ${shortDate(r.river_last_date + 'T12:00:00+07:00')} + prakiraan 7 hari` : 'belum ada', r.river_last_date ? '' : 'off', 'Debit sungai harian (model), komponen indeks risiko'));
     b.push(badge('PetaBencana',r.flood_last_report_at ? `laporan banjir terakhir ${shortDate(r.flood_last_report_at)}` : 'belum ada', ageH(r.flood_last_report_at) > 72 ? 'stale' : ''));
-    b.push(badge('Peringatan dini BMKG', 'belum tersambung', 'off'));
+    b.push(!warn ? badge('Peringatan dini BMKG', 'belum ada data', 'off')
+      : badge('Peringatan dini BMKG', `${hhmm(warn.last_fetch_at)} · ${warn.n_active_national} aktif se-Indonesia`,
+              warn.stale ? 'stale' : 'official', 'Nowcast BMKG, diperiksa tiap 15 menit'));
     $('#fresh').innerHTML = `<span class="fresh-label">Data terakhir masuk</span>${b.join('')}`;
   }
 
@@ -787,6 +807,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     $('#heroSrc').innerHTML = f.latest
       ? `Dari prakiraan per jam <b>Open-Meteo</b> ${hhmm(f.latest.issued_at)} ${f.tz_abbr} · prakiraan resmi BMKG di bawah`
       : '';
+    renderWarn(c.slug, f.tz_abbr);
     $('#totalNum').innerHTML = `${fmt(s.total_mm)}<span>mm</span>`;
     $('#marker').style.left = (scalePos(s.total_mm) * 100) + '%';
     $('#totalTag').innerHTML = `<b>Open-Meteo</b> ${f.latest ? 'diambil ' + hhmm(f.latest.issued_at) : 'belum ada'}`;
@@ -862,6 +883,49 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     });
   }
 
+  /* ---------- peringatan dini BMKG ---------- */
+  const warnOf = (slug) => (warn && warn.cities.find((c) => c.slug === slug)) || null;
+  const dm = (iso) => iso ? `${+iso.slice(8, 10)} ${MONTHS_SHORT[+iso.slice(5, 7)]} ${hhmm(iso)}` : '–';
+  const MONTHS_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  function markWarnTabs() {
+    document.querySelectorAll('#cityTabs button').forEach((b, i) => {
+      const w = cities[i] && warnOf(cities[i].slug);
+      b.classList.toggle('has-warn', !!(w && w.alerts.length));
+      b.title = w && w.alerts.length ? `Ada ${w.alerts.length} peringatan dini BMKG di sekitar ${cities[i].city}` : '';
+    });
+  }
+  function renderWarn(slug, tz) {
+    const box = $('#warnBox'), none = $('#warnNone');
+    const w = warnOf(slug);
+    if (!warn) { box.hidden = true; none.hidden = true; return; }
+    if (!w || !w.alerts.length) {
+      box.hidden = true; none.hidden = false;
+      none.textContent = `Tidak ada peringatan dini cuaca BMKG di sekitar ${cities[sel].city} (dibaca ${dm(warn.last_fetch_at)} WIB${warn.stale ? ', mungkin sudah berubah' : ''}).`;
+      return;
+    }
+    none.hidden = true; box.hidden = false;
+    box.innerHTML = `<span class="tag t-resmi"><b>Resmi BMKG</b> Peringatan dini cuaca · dibaca ${hhmm(warn.last_fetch_at)} WIB</span>` +
+      w.alerts.map((a) => `<div class="w-item"><span class="w-ev">${esc(a.event || a.headline)}</span>
+        <span class="w-meta">Berlaku ${hhmm(a.effective_at)}–${hhmm(a.expires_at)} ${tz} · ${a.distance_km < 0.5 ? 'titik kota di dalam wilayah' : '±' + fmt(a.distance_km) + ' km dari titik kota'}</span>
+        <span class="w-meta">${esc(a.places.slice(0, 8).join(', '))}${a.n_places > 8 ? ` dan ${a.n_places - 8} kecamatan lain` : ''}${a.infographic_url ? ` · <a href="${esc(a.infographic_url)}" target="_blank" rel="noopener">infografis BMKG</a>` : ''}</span></div>`).join('');
+  }
+  function drawWarnLayer() {
+    if (!wx || !warn) return;
+    wx.warn.clearLayers();
+    L.geoJSON(warn.geojson, {
+      style: () => ({ color: css('--mid'), weight: 1.5, fillColor: css('--mid'), fillOpacity: .16 }),
+      onEachFeature: (f, layer) => layer.bindPopup(`<b>${esc(f.properties.headline || f.properties.event)}</b><br>` +
+        `<span style="color:var(--src-resmi)">Resmi BMKG</span> · berlaku s.d. ${hhmm(f.properties.expires_at)}`),
+    }).addTo(wx.warn);
+  }
+  async function refreshWarn() {
+    try { warn = await api('/api/warnings'); } catch (e) { return; }
+    if (lastStatus) renderFresh(lastStatus);
+    markWarnTabs();
+    if (cities[sel]) renderWarn(cities[sel].slug, cities[sel].tz_abbr);
+    drawWarnLayer();
+  }
+
   function renderCities() {
     $('#cityTabs').innerHTML = cities.map((c) => `<button type="button">${esc(c.city)}</button>`).join('');
     $('#others').innerHTML = cities.map((c) => `<button type="button" class="city-row" aria-label="${esc(c.city)}, ${fmt(c.total_24h_mm)} mm">
@@ -872,6 +936,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
         ${risk[c.slug] && risk[c.slug].level ? `<span class="sub"><span class="rl" style="--lv:var(${LEVEL_VAR[risk[c.slug].level]})">Risiko banjir ${risk[c.slug].level.toLowerCase()} · ${risk[c.slug].score}</span></span>` : ''}</button>`).join('');
     document.querySelectorAll('.city-row .mini').forEach((m) => m.querySelectorAll('i').forEach((i, n) => { i.style.opacity = shade[n] * .5; }));
     document.querySelectorAll('#cityTabs button').forEach((b, i) => b.addEventListener('click', () => selectCity(i)));
+    markWarnTabs();
     document.querySelectorAll('.city-row').forEach((b, i) => b.addEventListener('click', () => { selectCity(i); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
   }
 
@@ -1026,7 +1091,8 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     map.getPane('labels').style.pointerEvents = 'none';
     L.tileLayer(ESRI + 'World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { pane: 'labels', minZoom: 7, maxZoom: 16 }).addTo(map);
     map.fitBounds([[-8.6, 97.5], [4.6, 120.5]]);
-    wx = { map, cities: L.layerGroup().addTo(map), floods: L.layerGroup().addTo(map), radar: null, data: null, markers: [], hour: 0 };
+    wx = { map, cities: L.layerGroup().addTo(map), floods: L.layerGroup().addTo(map), warn: L.layerGroup().addTo(map), radar: null, data: null, markers: [], hour: 0 };
+    drawWarnLayer();
     map.on('popupopen', (e) => {
       const b = e.popup.getElement().querySelector('[data-slug]');
       if (b) b.addEventListener('click', () => {
@@ -1122,6 +1188,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
   toggleLayer('#lyrCities', () => wx && wx.cities);
   toggleLayer('#lyrFloods', () => wx && wx.floods);
   toggleLayer('#lyrRadar', () => wx && wx.radar);
+  toggleLayer('#lyrWarn', () => wx && wx.warn);
 
   /* ---------- widget Tanya ---------- */
   const panel = $('#askPanel'), fab = $('#askFab');
@@ -1151,7 +1218,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
   // Markdown sederhana dari jawaban agen: paragraf, daftar "- ", **tebal**, dan [Label] → tag sumber.
   function inline(t) {
     return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-      .replace(/\[([^\]\n]{3,40})\]/g, (_, l) => `<span class="tag ${labelCls(l)}"><b>${l}</b></span>`);
+      .replace(/\[([^\]\n]{3,90})\]/g, (_, l) => `<span class="tag ${labelCls(l)}"><b>${l}</b></span>`);
   }
   function renderMd(text) {
     const out = []; let list = null;
@@ -1235,7 +1302,8 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
     if (location.protocol === 'file:') { showError('Buka lewat server API: uvicorn api.main:app --port 8010, lalu http://localhost:8010/'); return; }
     try {
       // Indeks risiko boleh gagal tanpa menjatuhkan dasbor.
-      const [cs, st, rk, ro] = await Promise.all([api('/api/cities'), api('/api/status'), api('/api/risk').catch(() => null), api('/api/rain-outlook').catch(() => null)]);
+      const [cs, st, rk, ro, wn] = await Promise.all([api('/api/cities'), api('/api/status'), api('/api/risk').catch(() => null), api('/api/rain-outlook').catch(() => null), api('/api/warnings').catch(() => null)]);
+      warn = wn;
       cities = cs;
       if (rk) { risk = Object.fromEntries(rk.cities.map((r) => [r.slug, r])); riskAt = rk.computed_at; }
       if (ro && ro.cities.length) { rain = Object.fromEntries(ro.cities.map((r) => [r.slug, r])); rainMeta = ro; }
@@ -1247,7 +1315,7 @@ footer { border-top: 1px solid var(--rule); padding-block: 18px 30px; font-size:
   }
 
   route(); scene(); load();
-  setInterval(() => { api('/api/status').then((st) => { renderFresh(st); renderStatus(st); }).catch(() => {}); }, 5 * 60 * 1000);
+  setInterval(() => { api('/api/status').then((st) => { renderFresh(st); renderStatus(st); }).catch(() => {}); refreshWarn(); }, 5 * 60 * 1000);
 })();
 </script>
 </body>

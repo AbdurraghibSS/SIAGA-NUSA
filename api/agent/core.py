@@ -10,6 +10,7 @@ Konten balasan model dikirim balik apa adanya karena model Gemini 3 menyertakan
 """
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -38,7 +39,11 @@ ATURAN ANGKA DAN SUMBER
 - Sebutkan waktu data (as_of / jam terbit) untuk prakiraan.
 - Indeks risiko dan peluang Model A adalah estimasi SIAGA NUSA, BUKAN peringatan resmi.
 - JANGAN pernah menetapkan status Waspada, Siaga, atau Awas. Status itu hanya dari BMKG/BPBD. \
-  Untuk peringatan resmi arahkan ke BMKG (aplikasi InfoBMKG) dan BPBD setempat.
+  Untuk pertanyaan peringatan/status, panggil `get_official_warnings` dan kutip isinya apa adanya \
+  (jenis kejadian, jam berlaku, kecamatan, jarak dari titik kota). Kalau tidak ada, katakan "tidak ada peringatan \
+  dini BMKG yang berlaku di sekitar <kota> per <as_of>", bukan "aman". Untuk pesan berantai/hoaks yang mengatasnamakan \
+  BMKG, cocokkan dengan hasil tool ini: katakan apa yang ADA di daftar peringatan BMKG, jangan mengklaim \
+  istilah atau kebiasaan lembaga mana pun yang tidak tertulis di hasil tool. Arahkan juga ke InfoBMKG dan BPBD setempat.
 
 PANDUAN KESIAPSIAGAAN
 - Untuk pertanyaan "apa yang harus dilakukan" (sebelum/saat/sesudah banjir, evakuasi, tas siaga, \
@@ -89,11 +94,12 @@ class AgentResult:
 
 
 class QuotaExhausted(RuntimeError):
-    """Semua model Gemini di rantai sedang kena 429."""
+    """Semua model Gemini di rantai sedang habis kuota (429) atau sibuk (503)."""
 
 
 _cooldown: dict[str, float] = {}   # model → waktu (monotonic) boleh dicoba lagi
-COOLDOWN_S = 60
+COOLDOWN_S = 60        # 429 kuota habis
+BUSY_COOLDOWN_S = 20   # 503 server ramai
 
 
 def models_chain() -> list[str]:
@@ -101,14 +107,25 @@ def models_chain() -> list[str]:
     return list(dict.fromkeys([settings.gemini_model, *extra]))
 
 
-def _is_quota(exc: Exception) -> bool:
-    msg = str(exc)
-    return getattr(exc, "code", None) == 429 or "429" in msg or "RESOURCE_EXHAUSTED" in msg
+def _busy_seconds(exc: Exception) -> int | None:
+    """Berapa lama model diistirahatkan untuk error ini, atau None kalau bukan soal kapasitas.
+
+    429 RESOURCE_EXHAUSTED = kuota (gratis) habis → 60 detik.
+    503 UNAVAILABLE / 504 DEADLINE_EXCEEDED / 500 "overloaded" / timeout baca = server ramai → 20 detik."""
+    code, msg = getattr(exc, "code", None), str(exc)
+    if "Timeout" in type(exc).__name__ or "timed out" in msg.lower():  # httpx ReadTimeout/ConnectTimeout
+        return BUSY_COOLDOWN_S
+    if code == 429 or "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+        return COOLDOWN_S
+    if code in (500, 503, 504) or any(k in msg for k in ("UNAVAILABLE", "DEADLINE_EXCEEDED", "high demand")) \
+            or "overloaded" in msg.lower():
+        return BUSY_COOLDOWN_S
+    return None
 
 
 def _generate(client, contents, config, used: list[str]):
-    """Panggil model pertama di rantai yang tidak sedang istirahat. 429 → istirahatkan model itu
-    `COOLDOWN_S` detik lalu coba model berikutnya. Model yang dipakai dicatat di `used`."""
+    """Panggil model pertama di rantai yang tidak sedang istirahat. Kuota habis (429) atau server
+    ramai (503) → istirahatkan model itu lalu coba model berikutnya. Model yang dipakai dicatat di `used`."""
     now = time.monotonic()
     # Model yang sudah dipakai di percakapan ini didahulukan: thought_signature terikat pada model.
     chain = sorted(models_chain(), key=lambda m: m not in used)
@@ -118,15 +135,16 @@ def _generate(client, contents, config, used: list[str]):
         try:
             resp = client.models.generate_content(model=model, contents=contents, config=config)
         except Exception as exc:
-            if not _is_quota(exc):
+            wait = _busy_seconds(exc)
+            if wait is None:
                 raise
-            log.warning("Gemini %s kena 429, istirahat %d detik", model, COOLDOWN_S)
-            _cooldown[model] = time.monotonic() + COOLDOWN_S
+            log.warning("Gemini %s tidak tersedia (%s), istirahat %d detik", model, str(exc)[:60], wait)
+            _cooldown[model] = time.monotonic() + wait
             continue
         if model not in used:
             used.append(model)
         return resp
-    raise QuotaExhausted("semua model Gemini sedang kena batas kuota")
+    raise QuotaExhausted("semua model Gemini sedang habis kuota atau sibuk")
 
 
 def make_client():
@@ -134,7 +152,11 @@ def make_client():
     from google.genai import types
 
     return genai.Client(api_key=settings.gemini_api_key,
-                        http_options=types.HttpOptions(timeout=int(settings.agent_timeout_s * 1000)))
+                        http_options=types.HttpOptions(
+                            timeout=int(settings.gemini_call_timeout_s * 1000),
+                            # Retry bawaan SDK dimatikan: lebih cepat pindah ke model cadangan (_generate)
+                            # daripada menunggu backoff pada model yang sedang ramai.
+                            retry_options=types.HttpRetryOptions(attempts=1)))
 
 
 def _config(force_text: bool = False):
@@ -154,8 +176,9 @@ def _config(force_text: bool = False):
     )
 
 
-def _sources(results: list[tuple[str, dict]]) -> list[dict]:
-    """Dokumen panduan yang dikutip (dari hasil search_preparedness_guide), tanpa duplikat."""
+def _sources(results: list[tuple[str, dict]], answer: str = "") -> list[dict]:
+    """Potongan panduan yang dikutip di jawaban (dicocokkan lewat nomor halaman awal), tanpa duplikat.
+    Kalau tidak ada yang cocok, semua potongan yang diambil ditampilkan."""
     seen, out = set(), []
     for name, res in results:
         if name != "search_preparedness_guide" or not res.get("ok"):
@@ -165,7 +188,8 @@ def _sources(results: list[tuple[str, dict]]) -> list[dict]:
             if key not in seen:
                 seen.add(key)
                 out.append({"title": p["judul"], "publisher": p["penerbit"], "year": p["tahun"], "pages": str(p["halaman"])})
-    return out
+    cited = [o for o in out if re.search(rf"hlm\.?\s*{re.escape(o['pages'].split('–')[0])}\b", answer)]
+    return cited or out
 
 
 def run(question: str, history: list[dict] | None = None, client=None,
@@ -215,7 +239,7 @@ def run(question: str, history: list[dict] | None = None, client=None,
         result.answer = "Maaf, saya belum bisa menyusun jawaban. Coba ulangi dengan pertanyaan yang lebih spesifik."
         result.status = "error"
     result.model = " → ".join(used) or None
-    result.sources = _sources(tool_results)
+    result.sources = _sources(tool_results, result.answer)
     result.checks = guard.check_answer(result.answer, [r for _, r in tool_results], question).as_dict()
     result.duration_ms = round((time.perf_counter() - t0) * 1000)
     return result

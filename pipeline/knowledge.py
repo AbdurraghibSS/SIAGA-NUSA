@@ -38,7 +38,7 @@ PREFETCH = 20
 # BM25 FastEmbed tidak punya stemmer bahasa Indonesia, jadi stemming dimatikan dan stopword
 # diganti daftar Indonesia (kata fungsi yang tidak membedakan topik).
 ID_STOPWORDS = frozenset("""
-ada adalah agar akan aku anda apa apabila atau bagai bagaimana bagi bahwa banyak beberapa belum
+ada adalah agar apa dua tiga pun pak bu akan aku anda apa apabila atau bagai bagaimana bagi bahwa banyak beberapa belum
 benar berupa bila bisa boleh dalam dan dapat dari daripada demikian dengan di dia dimana harus hal
 hanya hingga ia ialah ini itu jadi jika juga kalau kami kamu karena ke kepada ketika kita lagi lain
 lalu maka mana masih mau melalui mereka misalnya mungkin nya oleh pada para per perlu saat saja sama
@@ -230,6 +230,8 @@ def build(knowledge_dir: Path) -> dict:
     if not points:
         raise RuntimeError(f"Tidak ada PDF sumber di {knowledge_dir}")
 
+    write_doc_freq([p.payload["text"] for p in points], settings.data_dir / DF_FILE)
+
     qc = qdrant_client()
     name = settings.qdrant_collection
     if qc.collection_exists(name):
@@ -243,6 +245,42 @@ def build(knowledge_dir: Path) -> dict:
     qc.upsert(name, points=points, wait=True)
     summary["chunks"] = len(points)
     return summary
+
+
+DF_FILE = "knowledge_df.json"
+_WORD = re.compile(r"[a-z]{3,}")  # 3 huruf: "tas", "air" bermakna; kata fungsi dibuang lewat stopword
+
+
+def words(text: str) -> set[str]:
+    return set(_WORD.findall(text.lower())) - ID_STOPWORDS
+
+
+def write_doc_freq(texts: list[str], path: Path) -> None:
+    """Frekuensi dokumen tiap kata di seluruh korpus, untuk bobot IDF di mode hemat (tanpa LLM)."""
+    import json
+    from collections import Counter
+
+    df = Counter(w for t in texts for w in words(t))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"n": len(texts), "df": df}, ensure_ascii=False), encoding="utf-8")
+
+
+_df_cache: dict | None = None
+
+
+def idf(word: str) -> float:
+    """log((N+1)/(df+1)) dari korpus; kata yang tidak ada di korpus = 0 (tidak membantu memilih)."""
+    import json
+    import math
+
+    from pipeline.config import settings
+
+    global _df_cache
+    if _df_cache is None:
+        path = settings.data_dir / DF_FILE
+        _df_cache = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"n": 0, "df": {}}
+    df = _df_cache["df"].get(word, 0)
+    return math.log((_df_cache["n"] + 1) / (df + 1)) if df else 0.0
 
 
 def search(query: str, k: int = 4, mode: str = "hybrid") -> list[dict]:

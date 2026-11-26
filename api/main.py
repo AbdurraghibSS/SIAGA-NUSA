@@ -8,10 +8,12 @@ Pola sesi 10 & 11: model respons Pydantic, endpoint publik read-only, dan endpoi
 admin yang dilindungi header `X-API-Key`.
 """
 
+import json
 import logging
 import threading
 import time
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -24,7 +26,7 @@ from api.schemas import (BmkgBlock, BmkgForecast, CitySummary, DailyRain, DataRa
                          FloodReport, FloodSummary, Forecast, ForecastRun, ForecastSummary, HourValue, JobStatus,
                          MapCity, QuarantineCount, RainHistory, RiskComponent, RiskOverview, RiverDay, RiverSeries,
                          SourceStatus, Status, WeatherMap, CityRisk, RainChance, RainOutlook,
-                         ChatRequest, ChatResponse)
+                         ChatRequest, ChatResponse, CityWarnings, WarningsOverview, WeatherAlert)
 from pipeline.config import REPO_ROOT, settings
 from pipeline.db import engine
 from pipeline.locations import PILOT_LOCATIONS
@@ -39,7 +41,26 @@ MONTHS = ["", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Ok
 RAIN_MIN_HOURS = 60  # hujan 72 jam dianggap ada kalau ≥60 jam tercakup run Open-Meteo
 WINDOW_HOURS = 24
 
+def _warm_embeddings() -> None:
+    """Muat model embedding RAG (e5 + BM25) supaya pertanyaan panduan pertama tidak menunggu ±5 detik.
+    Gagal (mis. model belum diunduh) tidak menghentikan API."""
+    try:
+        from pipeline import knowledge
+        knowledge.embed_texts(["pemanasan"], task="query")
+        knowledge.sparse_texts(["pemanasan"], task="query")
+        log.info("model embedding RAG siap")
+    except Exception:
+        log.warning("model embedding RAG belum bisa dimuat", exc_info=True)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    threading.Thread(target=_warm_embeddings, daemon=True).start()  # tidak menahan startup
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="SIAGA NUSA API",
     description="Cuaca dan risiko banjir dari data BMKG, Open-Meteo, dan PetaBencana. Bukan sistem peringatan dini resmi.",
     version="0.2.0",
@@ -373,6 +394,53 @@ def rain_outlook() -> RainOutlook:
                 for r in rows if r.location in LOCATIONS],
     )
 
+WARNING_RADIUS_KM = 30  # pilihan tim: poligon peringatan dalam 30 km dari titik data kota dianggap relevan
+ALERTS_STALE_MIN = 45
+
+
+@app.get("/api/warnings", response_model=WarningsOverview, tags=["Peringatan"])
+def warnings() -> WarningsOverview:
+    """Peringatan dini cuaca BMKG (nowcast) yang masih berlaku di sekitar kota pilot, dicocokkan per poligon."""
+    tz = "Asia/Jakarta"
+    with engine.connect() as conn:
+        last = conn.execute(text(
+            "SELECT MAX(finished_at) FROM ingest_runs WHERE job = 'alerts_bmkg' AND status = 'ok'")).scalar()
+        n_nat = conn.execute(text(
+            "SELECT COUNT(*) FROM weather_alerts WHERE expires_at > NOW() AND COALESCE(msg_type, '') <> 'Cancel'")).scalar()
+        rows = conn.execute(text("""
+            SELECT l.slug, a.identifier, a.event, a.headline, a.effective_at, a.expires_at, a.places, a.urgency,
+                   a.severity, a.certainty, a.infographic_url, a.cap_url, ST_AsGeoJSON(a.geom, 4) AS gj,
+                   ST_Distance(a.geom::geography, ST_SetSRID(ST_MakePoint(l.lon, l.lat), 4326)::geography) / 1000 AS km
+            FROM locations l
+            JOIN weather_alerts a
+              ON a.expires_at > NOW() AND COALESCE(a.msg_type, '') <> 'Cancel'
+             AND ST_DWithin(a.geom::geography, ST_SetSRID(ST_MakePoint(l.lon, l.lat), 4326)::geography, :r)
+            ORDER BY l.slug, km
+        """), {"r": WARNING_RADIUS_KM * 1000}).all()
+    by_city: dict[str, list[WeatherAlert]] = {}
+    features, seen = [], set()
+    for r in rows:
+        by_city.setdefault(r.slug, []).append(WeatherAlert(
+            identifier=r.identifier, event=r.event, headline=r.headline,
+            effective_at=local_iso(r.effective_at, LOCATIONS[r.slug].tz), expires_at=local_iso(r.expires_at, LOCATIONS[r.slug].tz),
+            distance_km=round(r.km, 1), places=(r.places or [])[:15], n_places=len(r.places or []),
+            urgency=r.urgency, severity=r.severity, certainty=r.certainty,
+            infographic_url=r.infographic_url, cap_url=r.cap_url))
+        if r.identifier not in seen and r.gj:
+            seen.add(r.identifier)
+            features.append({"type": "Feature", "geometry": json.loads(r.gj), "properties": {
+                "identifier": r.identifier, "event": r.event, "headline": r.headline,
+                "expires_at": local_iso(r.expires_at, LOCATIONS[r.slug].tz)}})
+    now = datetime.now(timezone.utc)
+    return WarningsOverview(
+        checked_at=local_iso(now, tz), last_fetch_at=local_iso(last, tz),
+        stale=last is None or now - last > timedelta(minutes=ALERTS_STALE_MIN),
+        radius_km=WARNING_RADIUS_KM, n_active_national=n_nat,
+        cities=[CityWarnings(slug=loc.slug, city=loc.city, alerts=by_city.get(loc.slug, [])) for loc in PILOT_LOCATIONS],
+        geojson={"type": "FeatureCollection", "features": features},
+    )
+
+
 @app.get("/api/status", response_model=Status, tags=["Status"])
 def status() -> Status:
     """Kesegaran tiap sumber, job pipeline terakhir, dan isi karantina."""
@@ -430,8 +498,6 @@ def _rate_limited(ip: str) -> bool:
 
 
 def _log_agent(question: str, res, error: str | None = None) -> None:
-    import json
-
     try:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -439,7 +505,7 @@ def _log_agent(question: str, res, error: str | None = None) -> None:
                                         output_tokens, checks, detail)
                 VALUES (:q, :status, :model, :rounds, CAST(:tools AS jsonb), :ms, :tin, :tout, CAST(:checks AS jsonb), :detail)
             """), {
-                "q": question[:500], "status": res.status if res else "error", "model": settings.gemini_model,
+                "q": question[:500], "status": res.status if res else "error", "model": res.model if res else None,
                 "rounds": res.rounds if res else 0,
                 "tools": json.dumps([vars(s) for s in res.steps] if res else [], ensure_ascii=False, default=str),
                 "ms": res.duration_ms if res else None, "tin": res.input_tokens if res else None,
@@ -492,10 +558,11 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
             res = core.run(req.message, history)
         except core.QuotaExhausted:
             res = fallback.answer(req.message, reason="quota")
-        except Exception as exc:
-            _log_agent(req.message, None, f"{type(exc).__name__}: {str(exc)[:300]}")
-            raise HTTPException(status_code=503, detail=f"Agen sedang bermasalah ({type(exc).__name__}). "
-                                                        "Data di dasbor tetap bisa dipakai.")
+        except Exception as exc:  # error Gemini tak terduga: pengguna tetap dapat jawaban dari data
+            log.exception("agen gagal, pindah ke mode hemat")
+            res = fallback.answer(req.message, reason="error")
+            _log_agent(req.message, res, f"{type(exc).__name__}: {str(exc)[:300]}")
+            return _respond(res)
     _log_agent(req.message, res)
     out = _respond(res)
     if key and res.status == "ok":

@@ -58,7 +58,7 @@ services:
       QDRANT_URL: http://127.0.0.1:${QDRANT_PORT:-6333}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
-      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-gemini-3.5-flash-lite}
+      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-gemini-3.6-flash,gemini-3.5-flash-lite}
     command: ["uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "${API_PORT:-8011}"]
     volumes:
       - ./data:/app/data       # data pipeline (snapshot, arsip) + model embedding data/models, dipakai bersama host

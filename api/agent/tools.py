@@ -2,7 +2,7 @@
 
 Setiap tool memanggil fungsi endpoint yang sama dengan dasbor (api.main), jadi angka di
 chat dan di dasbor selalu sama. Setiap hasil membawa:
-  label   asal informasi: RESMI_BMKG | DATA_MODEL_CUACA | PREDIKSI_SIAGA_NUSA | LAPORAN_WARGA | PANDUAN_RESMI
+  label   asal informasi: RESMI_BMKG (prakiraan & peringatan dini) | DATA_MODEL_CUACA | PREDIKSI_SIAGA_NUSA | LAPORAN_WARGA | PANDUAN_RESMI
   as_of   waktu data (zona lokal)
 Error dikembalikan sebagai {ok: false, error, hint} supaya Gemini bisa memperbaiki argumen
 atau menjelaskan ke pengguna, bukan sebagai exception.
@@ -102,11 +102,15 @@ def get_rain_chance_tomorrow() -> dict:
     r = main.rain_outlook()
     if not r.cities:
         raise ToolError("Prediksi Model A belum ada", "Job predict belum dijalankan")
-    return {"label": "PREDIKSI_SIAGA_NUSA", "target_tanggal": r.target_date, "basi": r.stale,
+    out = {"label": "PREDIKSI_SIAGA_NUSA", "target_tanggal": r.target_date, "basi": r.stale,
             "model": f"{r.model_name} v{r.model_version}",
             "arti": "peluang hujan ≥20 mm dalam sehari (00–24 WIB); kelas Rendah <13%, Sedang 13–35%, Tinggi ≥35%",
             "kota": [{"city": c.city, "peluang": c.prob, "peluang_persen": round(c.prob * 100), "kelas": c.level,
                       "as_of": c.issued_at} for c in r.cities]}
+    if r.stale:
+        out["PERHATIAN"] = (f"Prediksi terbaru untuk {r.target_date}, BUKAN untuk besok (job predict belum dijalankan "
+                            "hari ini). Jangan menyebutnya 'besok'; sebut tanggalnya dan bahwa prediksi besok belum tersedia.")
+    return out
 
 
 def get_flood_risk(city: str | None = None) -> dict:
@@ -118,7 +122,7 @@ def get_flood_risk(city: str | None = None) -> dict:
         slug = city_slug(city)
         rows = [c for c in rows if c.slug == slug]
     return {"label": "PREDIKSI_SIAGA_NUSA", "as_of": r.computed_at,
-            "arti": "indeks 0–100 rule-based (bukan peringatan resmi); Rendah/Sedang/Tinggi",
+            "arti": "indeks 0–100 rule-based untuk KONDISI SAAT INI (hujan 72 jam terakhir + prakiraan 24 jam ke depan + debit hari ini–besok); bukan peringatan resmi; Rendah/Sedang/Tinggi",
             "kota": [{"city": c.city, "skor": c.score, "level": c.level, "metode": c.method_version,
                       "komponen": [{"nama": k.label, "sumber": k.source, "tersedia": k.available,
                                     "skor_0_1": k.score, "bobot": k.weight, "rincian": k.detail}
@@ -166,6 +170,48 @@ def get_rain_history(city: str, days: int | None = 7) -> dict:
                       "kategori": d.category} for d in h.days]}
 
 
+def get_official_warnings(city: str | None = None, kecamatan: str | None = None) -> dict:
+    from sqlalchemy import text
+
+    from api import main
+    from pipeline.db import engine
+
+    w = main.warnings()
+    rows = w.cities
+    if city and str(city).lower() not in ("all", "semua"):
+        slug = city_slug(city)
+        rows = [c for c in rows if c.slug == slug]
+    out: dict = {
+        "label": "RESMI_BMKG", "sumber": "Peringatan Dini Cuaca BMKG (nowcast)", "as_of": w.last_fetch_at,
+        "aktif_nasional": w.n_active_national, "radius_km": w.radius_km,
+        "catatan": "Nowcast BMKG berlaku 1–3 jam dan TIDAK memakai istilah Waspada/Siaga/Awas; kutip jenis kejadian, "
+                   "jam berlaku, dan kecamatan apa adanya. Tidak ada peringatan ≠ pasti aman. Di Jakarta, status "
+                   "'Siaga 1–4' biasanya status tinggi muka air pintu air dari BPBD/Dinas SDA DKI; SIAGA NUSA TIDAK "
+                   "membaca data itu, jadi jangan membantah atau membenarkannya, arahkan ke BPBD DKI.",
+        "kota": [{"city": c.city, "jumlah": len(c.alerts), "peringatan": [{
+            "kejadian": a.event, "judul": a.headline, "berlaku_mulai": a.effective_at, "berlaku_sampai": a.expires_at,
+            "jarak_km_dari_titik_kota": a.distance_km, "kecamatan_disebut": a.places, "total_kecamatan": a.n_places,
+            "tingkat_cap": {"urgency": a.urgency, "severity": a.severity, "certainty": a.certainty},
+            "infografis": a.infographic_url} for a in c.alerts]} for c in rows],
+    }
+    if kecamatan:
+        k = re.sub(r"^(kecamatan|kec\.?)\s+", "", str(kecamatan).strip(), flags=re.I)[:60]
+        with engine.connect() as conn:
+            hits = conn.execute(text("""
+                SELECT headline, event, effective_at, expires_at FROM weather_alerts
+                WHERE expires_at > NOW() AND COALESCE(msg_type, '') <> 'Cancel'
+                  AND EXISTS (SELECT 1 FROM unnest(places) p WHERE lower(p) = lower(:k))
+                ORDER BY expires_at DESC
+            """), {"k": k}).all()
+        out["cek_kecamatan"] = {"kecamatan": k.title(), "disebut_di_peringatan_aktif": bool(hits), "peringatan": [
+            {"judul": h.headline, "kejadian": h.event, "berlaku_sampai": main.local_iso(h.expires_at, "Asia/Jakarta")}
+            for h in hits]}
+    if w.stale:
+        out["PERHATIAN"] = (f"Daftar peringatan terakhir berhasil dibaca {w.last_fetch_at}; bisa jadi sudah berubah. "
+                            "Sarankan pengguna mengecek aplikasi InfoBMKG.")
+    return out
+
+
 def search_preparedness_guide(query: str) -> dict:
     from pipeline import knowledge
 
@@ -200,7 +246,8 @@ DECLARATIONS: list[dict] = [
      "parameters": {"type": "object", "properties": {}}},
     {"name": "get_flood_risk",
      "description": "Indeks risiko banjir SIAGA NUSA (0–100, Rendah/Sedang/Tinggi) beserta komponennya: hujan 72 jam, "
-                    "prakiraan 24 jam, debit sungai, riwayat laporan. Estimasi berbasis data, BUKAN peringatan resmi.",
+                    "prakiraan 24 jam, debit sungai, riwayat laporan. Menggambarkan kondisi SAAT INI sampai 24 jam ke depan, "
+                    "bukan khusus besok. Estimasi berbasis data, BUKAN peringatan resmi.",
      "parameters": {"type": "object", "properties": {
          "city": {"type": "string", "enum": [*CITY_SLUGS, "all"], "description": "Slug kota, atau 'all' untuk semua"}}}},
     {"name": "get_river_conditions",
@@ -215,6 +262,13 @@ DECLARATIONS: list[dict] = [
      "description": "Hujan harian yang sudah terjadi (ERA5, tertinggal ±5 hari) dan akumulasi 3 hari untuk satu kota.",
      "parameters": {"type": "object", "properties": {
          "city": _CITY, "days": {"type": "integer", "description": "1–30 hari (default 7)"}}, "required": ["city"]}},
+    {"name": "get_official_warnings",
+     "description": "Peringatan dini cuaca RESMI BMKG (nowcast) yang sedang berlaku di sekitar kota pilot (radius 30 km "
+                    "dari titik kota): jenis kejadian, jam berlaku, kecamatan. Pakai untuk 'ada peringatan?', "
+                    "'status siaga?', 'BMKG bilang apa?', atau cek satu kecamatan (argumen kecamatan, berlaku nasional).",
+     "parameters": {"type": "object", "properties": {
+         "city": {"type": "string", "enum": [*CITY_SLUGS, "all"], "description": "Slug kota, atau 'all'"},
+         "kecamatan": {"type": "string", "description": "Opsional: nama kecamatan untuk dicek, mis. 'Cipondoh'"}}}},
     {"name": "search_preparedness_guide",
      "description": "Cari di 10 panduan resmi (BNPB, BMKG, BPBD DKI, Kemenkes, ESDM): apa yang dilakukan sebelum/saat/sesudah "
                     "banjir, tas siaga, evakuasi, kesehatan, arti istilah cuaca. Kutip judul dan halaman.",
@@ -231,6 +285,7 @@ REGISTRY: dict[str, Callable[..., dict]] = {
     "get_river_conditions": get_river_conditions,
     "get_flood_reports": get_flood_reports,
     "get_rain_history": get_rain_history,
+    "get_official_warnings": get_official_warnings,
     "search_preparedness_guide": search_preparedness_guide,
 }
 _ALLOWED_ARGS = {d["name"]: set(d["parameters"]["properties"]) for d in DECLARATIONS}
