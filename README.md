@@ -116,8 +116,8 @@ python -m pipeline.run knowledge           # RAG: PDF panduan di docs/ → embed
 Mengubah `web/` atau kode backend? Jalankan ulang `docker compose up -d --build`. Untuk pengembangan cepat tanpa Docker, `uvicorn api.main:app --reload --port 8010` tetap menyajikan API dan dasbor sekaligus (hentikan dulu container `frontend` karena memakai port yang sama).<br>
 *All three containers restart with Docker. The frontend (nginx) serves the dashboard and proxies `/api` to the backend; rebuild after changes.*
 
-Snapshot prakiraan dikumpulkan otomatis oleh GitHub Actions (dijadwalkan tiap jam; kenyataannya ±3 kali sehari karena GitHub sering menunda cron) ([`snapshot.yml`](.github/workflows/snapshot.yml)) ke branch [`data-snapshots`](https://github.com/AbdurraghibSS/SIAGA-NUSA/tree/data-snapshots), karena BMKG tidak menyediakan arsip prakiraan. `pipeline.run sync` mengambil branch itu.<br>
-*Forecast snapshots are collected by GitHub Actions (scheduled hourly; in practice ±3 times a day because GitHub often delays cron) into the `data-snapshots` branch, because BMKG keeps no forecast archive. `pipeline.run sync` pulls that branch.*
+Snapshot prakiraan dikumpulkan otomatis oleh GitHub Actions tiap jam (dipicu pg_cron Supabase, karena cron GitHub sendiri hanya jalan ±3 kali sehari) ([`snapshot.yml`](.github/workflows/snapshot.yml)) ke branch [`data-snapshots`](https://github.com/AbdurraghibSS/SIAGA-NUSA/tree/data-snapshots), karena BMKG tidak menyediakan arsip prakiraan. `pipeline.run sync` mengambil branch itu.<br>
+*Forecast snapshots are collected by GitHub Actions hourly (triggered by Supabase pg_cron, since GitHub cron alone runs only ±3 times a day) into the `data-snapshots` branch, because BMKG keeps no forecast archive. `pipeline.run sync` pulls that branch.*
 
 ### ☁️ Deploy gratis tanpa kartu kredit · *Free deployment, no credit card*
 
@@ -126,9 +126,9 @@ Snapshot prakiraan dikumpulkan otomatis oleh GitHub Actions (dijadwalkan tiap ja
 | Dasbor + API + agen | **Vercel Hobby** (region `sin1`) | `api.main:app` sebagai satu Vercel Function ([`vercel.json`](vercel.json), `[tool.vercel]` di `pyproject.toml`); `web/` disajikan CDN |
 | PostGIS | **Supabase Free** (Singapore) | Migrasi sekali: [`scripts/migrate_db.py`](scripts/migrate_db.py); Vercel lewat transaction pooler (NullPool, tanpa prepared statement) |
 | RAG | **Qdrant Cloud Free** + Cloud Inference | Embedding `multilingual-e5-small` + `qdrant/bm25` dihitung server Qdrant, jadi API tidak memuat model (hybrid tetap 7/8 di top-3) |
-| Penjadwal | **GitHub Actions** | [`snapshot.yml`](.github/workflows/snapshot.yml) tiap jam, [`alerts.yml`](.github/workflows/alerts.yml) tiap 15 menit, [`daily.yml`](.github/workflows/daily.yml) 05.30 WIB (Model A dari salinan [`models/`](models/)) |
+| Penjadwal | **GitHub Actions**, dipicu **pg_cron Supabase** | [`snapshot.yml`](.github/workflows/snapshot.yml) tiap jam, [`alerts.yml`](.github/workflows/alerts.yml) tiap 15 menit, [`daily.yml`](.github/workflows/daily.yml) 05.30 WIB (Model A dari salinan [`models/`](models/)). Cron GitHub sering melewatkan jadwal, jadi [`sql/supabase_cron.sql`](sql/supabase_cron.sql) memanggil `workflow_dispatch` tepat waktu; `schedule:` GitHub tetap jadi cadangan |
 
-Environment Vercel: `DATABASE_URL` (transaction pooler), `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_CLOUD_INFERENCE=true`, `GEMINI_API_KEY`, dan opsional `BASIC_AUTH_PASSWORD` (login sederhana). Secret GitHub Actions: `DATABASE_URL` (session pooler), `QDRANT_URL`, `QDRANT_API_KEY`. Stack Docker di laptop tetap untuk pengembangan, eksperimen MLflow, dan membangun ulang RAG.
+Environment Vercel: `DATABASE_URL` (transaction pooler), `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_CLOUD_INFERENCE=true`, `GEMINI_API_KEY`, dan opsional `BASIC_AUTH_PASSWORD` (login sederhana). Secret GitHub Actions: `DATABASE_URL` (session pooler), `QDRANT_URL`, `QDRANT_API_KEY`. Pemicu jadwal: isi `GITHUB_DISPATCH_TOKEN` (fine-grained PAT, repo ini saja, izin *Actions: read & write*) di `.env`, lalu `python scripts/setup_supabase_cron.py --test` (token disimpan di Supabase Vault; `--check` untuk memantau). Stack Docker di laptop tetap untuk pengembangan, eksperimen MLflow, dan membangun ulang RAG.
 
 ### 🌐 Akses tim dari luar · *Team access via tunnel*
 
