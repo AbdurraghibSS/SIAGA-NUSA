@@ -15,6 +15,7 @@ NOTES = {
     "quota": "Mode hemat: layanan AI sedang penuh atau kuotanya habis, jadi jawaban ini disusun otomatis dari data tanpa AI.",
     "off": "Mode hemat: AI belum diaktifkan di server ini, jadi jawaban ini disusun otomatis dari data tanpa AI.",
     "error": "Mode hemat: layanan AI sedang bermasalah, jadi jawaban ini disusun otomatis dari data tanpa AI.",
+    "limit": "Mode hemat: batas harian pertanyaan AI sudah tercapai, jadi jawaban ini disusun otomatis dari data tanpa AI.",
 }
 
 _WARN = re.compile(r"\b(peringatan|waspada|siaga|awas|status|hoaks|hoax|pesan berantai)\b", re.I)

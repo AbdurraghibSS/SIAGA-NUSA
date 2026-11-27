@@ -57,8 +57,15 @@ services:
       DATABASE_URL: postgresql+psycopg://siaga:${POSTGRES_PASSWORD:-siaga_dev}@localhost:${DB_PORT:-5434}/siaga_nusa
       SERVE_WEB: "false"
       API_KEY: ${API_KEY:-}
+      API_RATE_PER_MIN: ${API_RATE_PER_MIN:-120}
+      AGENT_RATE_PER_MIN: ${AGENT_RATE_PER_MIN:-10}
+      AGENT_DAILY_LIMIT: ${AGENT_DAILY_LIMIT:-300}
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://127.0.0.1:5000}
       QDRANT_URL: http://127.0.0.1:${QDRANT_PORT:-6333}
+      EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
+      EMBED_DIM: ${EMBED_DIM:-384}
+      EMBED_QUERY_PREFIX: ${EMBED_QUERY_PREFIX:-}   # kosong = otomatis dari nama model
+      EMBED_DOC_PREFIX: ${EMBED_DOC_PREFIX:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
       GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-gemini-3.6-flash,gemini-3.5-flash-lite}

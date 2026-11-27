@@ -29,8 +29,10 @@ class Settings(BaseSettings):
     # container frontend (nginx), jadi backend memakai SERVE_WEB=false.
     serve_web: bool = True
 
-    # Kunci untuk endpoint admin API (mis. menjalankan ulang pipeline). Kosong = endpoint dimatikan.
+    # Kunci header X-API-Key (api/security.py): wajib untuk endpoint admin (kosong = admin dimatikan),
+    # opsional di endpoint lain untuk klien tepercaya (bebas batas request per IP).
     api_key: str | None = None
+    api_rate_per_min: int = 120        # request /api/* per menit per IP (dasbor memuat ±10 sekaligus)
 
     # Login sederhana untuk deploy publik tanpa nginx (Vercel). Kosong = terbuka.
     basic_auth_user: str = "tim"
@@ -48,6 +50,9 @@ class Settings(BaseSettings):
     agent_timeout_s: float = 30.0      # batas total satu pertanyaan
     gemini_call_timeout_s: float = 12.0  # per panggilan; model lambat/504 cepat dilepas ke model cadangan
     agent_rate_per_min: int = 10       # pertanyaan per menit per alamat IP
+    # Batas global pertanyaan yang memakai LLM per 24 jam (semua pengguna, dihitung dari agent_logs).
+    # Lewat batas → mode hemat tanpa LLM. 0 = tanpa batas.
+    agent_daily_limit: int = 300
 
     # RAG: PDF panduan kesiapsiagaan (tidak di-commit, taruh di docs/) → vector DB Qdrant.
     knowledge_dir: Path = REPO_ROOT / "docs"
@@ -57,7 +62,15 @@ class Settings(BaseSettings):
     # sehingga API tidak perlu memuat model ±470 MB (dipakai di Vercel). False: FastEmbed lokal.
     qdrant_cloud_inference: bool = False
     qdrant_collection: str = "siaganusa-panduan"
-    embed_model: str = "intfloat/multilingual-e5-small"  # lokal, lihat pipeline/knowledge.py
+    # Model embedding dense RAG (pipeline/knowledge.py). Mengganti model: sesuaikan EMBED_DIM, lalu
+    # bangun ulang koleksi (`python -m pipeline.run knowledge`; untuk Vercel jalankan dengan QDRANT_URL/
+    # QDRANT_API_KEY Qdrant Cloud, dan modelnya harus tersedia di Qdrant Cloud Inference).
+    embed_model: str = "intfloat/multilingual-e5-small"
+    embed_dim: int = 384
+    # Awalan teks yang diminta keluarga model tertentu. Tidak diisi = otomatis: model e5 memakai
+    # "query: " / "passage: ", model lain tanpa awalan.
+    embed_query_prefix: str | None = None
+    embed_doc_prefix: str | None = None
 
     # env_ignore_empty: baris kosong di .env (mis. "GEMINI_MODEL=") tidak menimpa default.
     # SIAGA_ENV_FILE: tes mengarahkannya ke file kosong supaya tidak terpengaruh .env pribadi.

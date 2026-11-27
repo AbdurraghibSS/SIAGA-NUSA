@@ -15,7 +15,8 @@ Langkah:
    menyimpan rentang halaman untuk sitasi.
 3. Dua representasi per potongan, tanpa kuota Gemini. Dihitung LOKAL (FastEmbed) atau, kalau
    QDRANT_CLOUD_INFERENCE=true, oleh server Qdrant Cloud dengan model yang sama (gratis):
-   - `dense`: `intfloat/multilingual-e5-small` (384 dimensi), menangkap makna/parafrasa;
+   - `dense`: EMBED_MODEL di .env (default `intfloat/multilingual-e5-small`, 384 dimensi),
+     menangkap makna/parafrasa;
    - `bm25`:  vektor sparse kata kunci, IDF dihitung Qdrant. Menangkap istilah persis yang
      sering meleset di dense (leptospirosis, waspada/siaga/awas, tas siaga).
 4. Pencarian hybrid: ambil 20 teratas dari masing-masing, gabungkan dengan Reciprocal Rank
@@ -33,7 +34,6 @@ log = logging.getLogger(__name__)
 WINDOW = 200
 STEP = 160
 MIN_WORDS = 40          # sisa terakhir yang lebih pendek digabung ke potongan sebelumnya
-EMBED_DIM = 384
 EMBED_BATCH = 8
 PREFETCH = 20
 # BM25 FastEmbed tidak punya stemmer bahasa Indonesia, jadi stemming dimatikan dan stopword
@@ -158,9 +158,15 @@ def _model():
 
         from pipeline.config import settings
 
-        if settings.embed_model not in {m["model"] for m in TextEmbedding.list_supported_models()}:
+        known = {m["model"]: m.get("dim") for m in TextEmbedding.list_supported_models()}
+        if settings.embed_model in known:
+            if known[settings.embed_model] and known[settings.embed_model] != settings.embed_dim:
+                raise ValueError(f"EMBED_DIM={settings.embed_dim}, padahal {settings.embed_model} "
+                                 f"berdimensi {known[settings.embed_model]}. Sesuaikan EMBED_DIM di .env.")
+        else:
+            # Model di luar daftar FastEmbed: dianggap ONNX di onnx/model.onnx dengan mean pooling (gaya e5).
             TextEmbedding.add_custom_model(model=settings.embed_model, pooling=PoolingType.MEAN, normalization=True,
-                                           sources=ModelSource(hf=settings.embed_model), dim=EMBED_DIM,
+                                           sources=ModelSource(hf=settings.embed_model), dim=settings.embed_dim,
                                            model_file="onnx/model.onnx")
         _embedder = TextEmbedding(settings.embed_model, cache_dir=str(settings.data_dir / "models"), threads=2)
     return _embedder
@@ -178,11 +184,24 @@ def _cloud() -> bool:
     return settings.qdrant_cloud_inference
 
 
+def embed_prefix(task: str) -> str:
+    """Awalan teks untuk model dense: dari EMBED_QUERY_PREFIX/EMBED_DOC_PREFIX, atau otomatis
+    ("query: "/"passage: " untuk keluarga e5, kosong untuk model lain)."""
+    from pipeline.config import settings
+
+    explicit = settings.embed_doc_prefix if task == "document" else settings.embed_query_prefix
+    if explicit is not None:
+        return explicit
+    if "e5" in settings.embed_model.lower():
+        return "passage: " if task == "document" else "query: "
+    return ""
+
+
 def embed_texts(texts: list[str], task: str = "document") -> list:
-    """Vektor dense e5. Model e5 butuh awalan "passage: " untuk dokumen dan "query: " untuk pertanyaan.
+    """Vektor dense untuk dokumen (`task="document"`) atau pertanyaan (`task="query"`).
 
     Mode Cloud Inference: kembalikan `Document` (teks + nama model) yang di-embed server Qdrant."""
-    prefix = "passage: " if task == "document" else "query: "
+    prefix = embed_prefix(task)
     if _cloud():
         from qdrant_client import models
 
@@ -264,7 +283,7 @@ def build(knowledge_dir: Path) -> dict:
         qc.delete_collection(name)
     qc.create_collection(
         name,
-        vectors_config={"dense": models.VectorParams(size=EMBED_DIM, distance=models.Distance.COSINE)},
+        vectors_config={"dense": models.VectorParams(size=settings.embed_dim, distance=models.Distance.COSINE)},
         sparse_vectors_config={"bm25": models.SparseVectorParams(modifier=models.Modifier.IDF)},
     )
     qc.create_payload_index(name, "doc", models.PayloadSchemaType.KEYWORD)
@@ -352,10 +371,18 @@ def search(query: str, k: int = 4, mode: str = "hybrid") -> list[dict]:
     dense = models.Prefetch(query=embed_texts([query], task="query")[0], using="dense", limit=PREFETCH)
     sparse = models.Prefetch(query=sparse_texts([query], task="query")[0], using="bm25", limit=PREFETCH)
     qc = qdrant_client()
-    if mode == "hybrid":
-        res = qc.query_points(settings.qdrant_collection, prefetch=[dense, sparse],
-                              query=models.FusionQuery(fusion=models.Fusion.RRF), limit=k, with_payload=True)
-    else:
-        pf = dense if mode == "dense" else sparse
-        res = qc.query_points(settings.qdrant_collection, query=pf.query, using=pf.using, limit=k, with_payload=True)
+    try:
+        if mode == "hybrid":
+            res = qc.query_points(settings.qdrant_collection, prefetch=[dense, sparse],
+                                  query=models.FusionQuery(fusion=models.Fusion.RRF), limit=k, with_payload=True)
+        else:
+            pf = dense if mode == "dense" else sparse
+            res = qc.query_points(settings.qdrant_collection, query=pf.query, using=pf.using, limit=k,
+                                  with_payload=True)
+    except Exception as exc:
+        if "dimension" in str(exc).lower():  # EMBED_MODEL diganti tapi koleksi belum dibangun ulang
+            raise RuntimeError(f"Koleksi {settings.qdrant_collection} dibangun dengan model embedding lain "
+                               f"(EMBED_MODEL={settings.embed_model}, EMBED_DIM={settings.embed_dim}). "
+                               "Jalankan: python -m pipeline.run knowledge") from exc
+        raise
     return [{"score": round(h.score, 3), **h.payload} for h in res.points]

@@ -25,5 +25,9 @@ def test_basic_auth_middleware_when_password_set(monkeypatch):
     assert c.get("/api/cities").status_code == 401
     assert c.get("/api/cities", auth=("tim", "salah")).status_code == 401
     assert c.get("/openapi.json", auth=("tim", "rahasia")).status_code == 200
+    # Klien program (Postman/skrip) boleh lolos dengan X-API-Key tanpa login Basic.
+    monkeypatch.setattr(config.settings, "api_key", "kunci")
+    assert c.get("/openapi.json", headers={"X-API-Key": "kunci"}).status_code == 200
+    assert c.get("/openapi.json", headers={"X-API-Key": "salah"}).status_code == 401
     monkeypatch.setattr(config.settings, "basic_auth_password", None)
     importlib.reload(api.main)

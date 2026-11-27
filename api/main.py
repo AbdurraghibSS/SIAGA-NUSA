@@ -4,23 +4,23 @@
     → dasbor  http://localhost:8010/
     → dokumentasi interaktif  http://localhost:8010/docs
 
-Pola sesi 10 & 11: model respons Pydantic, endpoint publik read-only, dan endpoint
-admin yang dilindungi header `X-API-Key`.
+Pola sesi 10 & 11: model respons Pydantic, endpoint publik read-only, dan pengamanan lewat
+dependency (`X-API-Key` + batas request per IP, lihat api/security.py).
 """
 
 import json
 import logging
 import threading
 import time
-from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from api import security
 from api.logic import REGION_NAMES, TZ_ABBR, cell_center, local_iso, summarize
 from api.schemas import (BmkgBlock, BmkgForecast, CitySummary, DailyRain, DataRanges, FloodCell, FloodRegion,
                          FloodReport, FloodSummary, Forecast, ForecastRun, ForecastSummary, HourValue, JobStatus,
@@ -65,10 +65,14 @@ app = FastAPI(
     description="Cuaca dan risiko banjir dari data BMKG, Open-Meteo, dan PetaBencana. Bukan sistem peringatan dini resmi.",
     version="0.2.0",
 )
+# Semua endpoint data di bawah /api: batas request per IP (X-API-Key valid dibebaskan).
+router = APIRouter(prefix="/api", dependencies=[Depends(security.rate_limit)])
 
 
-# Basic auth opsional (deploy publik di Vercel; di Docker nginx yang menangani). /health dikecualikan
-# untuk pemantauan. Catatan Vercel: middleware membuat file statis disajikan dari function, bukan CDN.
+# Basic auth opsional: mengunci SELURUH situs (dasbor + API) selama tahap uji. Kosongkan
+# BASIC_AUTH_PASSWORD untuk membuka dasbor ke publik; pengaman di api/security.py tetap berlaku.
+# Di Docker nginx yang menangani. /health dikecualikan untuk pemantauan; X-API-Key valid juga lolos
+# (skrip/Postman). Catatan Vercel: middleware membuat file statis disajikan dari function, bukan CDN.
 if settings.basic_auth_password:
     import base64
     import secrets as _secrets
@@ -79,7 +83,7 @@ if settings.basic_auth_password:
 
     @app.middleware("http")
     async def _basic_auth(request: Request, call_next):
-        if request.url.path == "/health":
+        if request.url.path == "/health" or security.key_valid(request.headers.get("x-api-key")):
             return await call_next(request)
         header = request.headers.get("authorization", "")
         if header.startswith("Basic ") and _secrets.compare_digest(header[6:].strip(), _expected):
@@ -126,7 +130,7 @@ def _hours(conn, slug: str, issued_at: datetime, start: datetime) -> list[tuple[
     return [(r.valid_at, r.precip_mm, r.precip_prob_pct) for r in rows]
 
 
-@app.get("/api/cities", response_model=list[CitySummary], tags=["Prakiraan"])
+@router.get("/cities", response_model=list[CitySummary], tags=["Prakiraan"])
 def cities() -> list[CitySummary]:
     """Total hujan 24 jam ke depan per kota pilot, dari run Open-Meteo terbaru."""
     start = _window_start()
@@ -148,7 +152,7 @@ def cities() -> list[CitySummary]:
     return out
 
 
-@app.get("/api/forecast/{slug}", response_model=Forecast, tags=["Prakiraan"])
+@router.get("/forecast/{slug}", response_model=Forecast, tags=["Prakiraan"])
 def forecast(slug: str) -> Forecast:
     """Prakiraan per jam 24 jam ke depan: run terbaru vs sebelumnya, plus prakiraan resmi BMKG per 3 jam."""
     loc = _location(slug)
@@ -189,7 +193,7 @@ def forecast(slug: str) -> Forecast:
                     latest=latest, previous=previous, summary=summary, bmkg=bmkg)
 
 
-@app.get("/api/map", response_model=WeatherMap, tags=["Prakiraan"])
+@router.get("/map", response_model=WeatherMap, tags=["Prakiraan"])
 def weather_map() -> WeatherMap:
     """Semua kota pilot dengan hujan per jam 24 jam ke depan (untuk animasi peta), satu panggilan."""
     start = _window_start()
@@ -213,7 +217,7 @@ def weather_map() -> WeatherMap:
     return WeatherMap(window_start=local_iso(start, "Asia/Jakarta"), cities=out)
 
 
-@app.get("/api/history/{slug}", response_model=RainHistory, tags=["Prakiraan"])
+@router.get("/history/{slug}", response_model=RainHistory, tags=["Prakiraan"])
 def history(slug: str, days: int = Query(30, ge=1, le=3650)) -> RainHistory:
     """Hujan harian ERA5 (reanalysis, tertinggal ±5 hari) dengan akumulasi 3 dan 7 hari."""
     loc = _location(slug)
@@ -227,7 +231,7 @@ def history(slug: str, days: int = Query(30, ge=1, le=3650)) -> RainHistory:
                   precip_7d_mm=r.precip_7d_mm, category=r.category) for r in reversed(rows)])
 
 
-@app.get("/api/floods", response_model=FloodSummary, tags=["Banjir"])
+@router.get("/floods", response_model=FloodSummary, tags=["Banjir"])
 def floods(days: int = Query(365, ge=1, le=3650), recent: int = Query(12, ge=0, le=100)) -> FloodSummary:
     """Laporan banjir warga Jabodetabek (PetaBencana, belum terverifikasi). Laporan latihan/uji tidak dihitung."""
     tz = "Asia/Jakarta"
@@ -360,7 +364,7 @@ def _city_risk(conn, loc, start: datetime, month: int) -> CityRisk:
                     method_version=result["method_version"], components=comps)
 
 
-@app.get("/api/risk", response_model=RiskOverview, tags=["Risiko"])
+@router.get("/risk", response_model=RiskOverview, tags=["Risiko"])
 def risk() -> RiskOverview:
     """Indeks risiko banjir rule-based (0–100, Rendah/Sedang/Tinggi) per kota, dengan rincian komponen."""
     start = _window_start()
@@ -370,7 +374,7 @@ def risk() -> RiskOverview:
     return RiskOverview(computed_at=local_iso(datetime.now(timezone.utc), "Asia/Jakarta"), month=month, cities=cities)
 
 
-@app.get("/api/river/{slug}", response_model=RiverSeries, tags=["Risiko"])
+@router.get("/river/{slug}", response_model=RiverSeries, tags=["Risiko"])
 def river(slug: str, days: int = Query(60, ge=7, le=3650)) -> RiverSeries:
     """Debit harian GloFAS titik sungai kota: riwayat `days` hari + prakiraan, dengan median & p90 bulan ini."""
     loc = _location(slug)
@@ -393,7 +397,7 @@ def river(slug: str, days: int = Query(60, ge=7, le=3650)) -> RiverSeries:
                                       is_forecast=r.is_forecast) for r in rows])
 
 
-@app.get("/api/rain-outlook", response_model=RainOutlook, tags=["Prediksi"])
+@router.get("/rain-outlook", response_model=RainOutlook, tags=["Prediksi"])
 def rain_outlook() -> RainOutlook:
     """Model A: peluang hujan sedang ke atas (≥20 mm sehari) untuk hari prediksi terbaru, per kota."""
     tomorrow = (datetime.now(ZoneInfo("Asia/Jakarta")) + timedelta(days=1)).date()
@@ -418,7 +422,7 @@ WARNING_RADIUS_KM = 30  # pilihan tim: poligon peringatan dalam 30 km dari titik
 ALERTS_STALE_MIN = 45
 
 
-@app.get("/api/warnings", response_model=WarningsOverview, tags=["Peringatan"])
+@router.get("/warnings", response_model=WarningsOverview, tags=["Peringatan"])
 def warnings() -> WarningsOverview:
     """Peringatan dini cuaca BMKG (nowcast) yang masih berlaku di sekitar kota pilot, dicocokkan per poligon."""
     tz = "Asia/Jakarta"
@@ -461,7 +465,7 @@ def warnings() -> WarningsOverview:
     )
 
 
-@app.get("/api/status", response_model=Status, tags=["Status"])
+@router.get("/status", response_model=Status, tags=["Status"])
 def status() -> Status:
     """Kesegaran tiap sumber, job pipeline terakhir, dan isi karantina."""
     tz = "Asia/Jakarta"
@@ -500,21 +504,17 @@ def status() -> Status:
 # ---------------------------------------------------------------------------
 # Agen Tanya (Gemini + tools, lihat api/agent/)
 # ---------------------------------------------------------------------------
-_rate: dict[str, deque] = defaultdict(deque)
-_rate_lock = threading.Lock()
-
-
-def _rate_limited(ip: str) -> bool:
-    """Jendela geser 60 detik per IP, di memori (cukup untuk satu proses uvicorn)."""
-    now = time.monotonic()
-    with _rate_lock:
-        q = _rate[ip]
-        while q and now - q[0] > 60:
-            q.popleft()
-        if len(q) >= settings.agent_rate_per_min:
-            return True
-        q.append(now)
-        return False
+def _agent_daily_used() -> int:
+    """Pertanyaan yang memakai LLM dalam 24 jam terakhir (model terisi), dari DB supaya berlaku
+    lintas instance Vercel. DB gagal dibaca → 0 (jangan matikan agen karena log)."""
+    try:
+        with engine.connect() as conn:
+            return conn.execute(text(
+                "SELECT COUNT(*) FROM agent_logs WHERE asked_at > NOW() - INTERVAL '24 hours' AND model IS NOT NULL"
+            )).scalar_one()
+    except Exception:
+        log.warning("gagal menghitung pemakaian agen harian", exc_info=True)
+        return 0
 
 
 def _log_agent(question: str, res, error: str | None = None) -> None:
@@ -549,29 +549,31 @@ def _respond(res) -> ChatResponse:
                         sources=res.sources, checks=res.checks, model=res.model, duration_ms=res.duration_ms)
 
 
-@app.post("/api/chat", response_model=ChatResponse, tags=["Agen"])
-def chat(req: ChatRequest, request: Request) -> ChatResponse:
+@router.post("/chat", response_model=ChatResponse, tags=["Agen"],
+             dependencies=[Depends(security.chat_rate_limit)])
+def chat(req: ChatRequest) -> ChatResponse:
     """Tanya SIAGA NUSA: Gemini memilih tool data/panduan, lalu menjawab dengan label sumber.
 
     Stateless: klien mengirim ulang `history`. Hemat kuota Gemini gratis:
     1. pertanyaan pembuka yang sama dijawab dari cache selama `AGENT_CACHE_TTL_S` detik;
     2. model kena 429 → pindah ke `GEMINI_FALLBACK_MODELS`;
-    3. semua model habis (atau kunci kosong) → mode hemat tanpa LLM (api/agent/fallback.py).
+    3. semua model habis, kunci kosong, atau batas harian `AGENT_DAILY_LIMIT` tercapai → mode hemat
+       tanpa LLM (api/agent/fallback.py).
     Batas: 500 karakter, `AGENT_RATE_PER_MIN` pertanyaan per menit per IP, `AGENT_MAX_ROUNDS` putaran tool.
     """
     from api.agent import core, fallback
 
-    ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "?")
-    if _rate_limited(ip):
-        raise HTTPException(status_code=429, detail="Terlalu banyak pertanyaan. Tunggu sebentar lalu coba lagi.")
     key = _cache_key(req)
     hit = _answer_cache.get(key) if key else None
     if hit and time.monotonic() - hit[0] < settings.agent_cache_ttl_s:
         return hit[1].model_copy(update={"status": "cached", "duration_ms": 0})
 
     history = [t.model_dump() for t in req.history]
-    if not settings.gemini_api_key:
-        res = fallback.answer(req.message, reason="off") if core.guard.check_input(req.message).ok \
+    off = None if settings.gemini_api_key else "off"
+    if not off and settings.agent_daily_limit and _agent_daily_used() >= settings.agent_daily_limit:
+        off = "limit"  # rem biaya/kuota: publik tidak bisa menghabiskan kuota Gemini
+    if off:
+        res = fallback.answer(req.message, reason=off) if core.guard.check_input(req.message).ok \
             else core.run(req.message, history)
     else:
         try:
@@ -595,14 +597,7 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
 # ---------------------------------------------------------------------------
 # Admin (X-API-Key)
 # ---------------------------------------------------------------------------
-def require_api_key(x_api_key: str | None = Header(None)) -> None:
-    if not settings.api_key:
-        raise HTTPException(status_code=503, detail="Endpoint admin dimatikan: API_KEY belum diisi di .env")
-    if x_api_key != settings.api_key:
-        raise HTTPException(status_code=401, detail="Header X-API-Key salah atau tidak ada")
-
-
-@app.post("/api/admin/refresh", status_code=202, tags=["Admin"], dependencies=[Depends(require_api_key)])
+@router.post("/admin/refresh", status_code=202, tags=["Admin"], dependencies=[Depends(security.require_admin)])
 def refresh(background: BackgroundTasks, full: bool = False) -> dict:
     """Jalankan pipeline di latar belakang. Default: snapshot + prakiraan; `full=true`: semua job."""
     from pipeline.run import main as run_pipeline
@@ -611,6 +606,8 @@ def refresh(background: BackgroundTasks, full: bool = False) -> dict:
     background.add_task(run_pipeline, jobs)
     return {"accepted": True, "jobs": jobs, "at": datetime.now(ZoneInfo("Asia/Jakarta")).isoformat()}
 
+
+app.include_router(router)
 
 # Dasbor statis (harus dipasang terakhir supaya tidak menutupi /api).
 # Di Docker dimatikan: container frontend (nginx) yang menyajikan web/.

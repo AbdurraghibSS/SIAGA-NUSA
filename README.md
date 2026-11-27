@@ -72,6 +72,20 @@
 Status siaga dan peringatan resmi **hanya** berasal dari data BMKG dan diputuskan oleh kode, bukan oleh model bahasa. Laporan warga dan pesan pengguna selalu diperlakukan sebagai data, bukan perintah, sehingga sistem tahan terhadap *prompt injection* seperti upaya menyebarkan peringatan banjir palsu.<br>
 *Alert status and official warnings come **only** from BMKG data and are decided by code, never by the language model. Citizen reports and user messages are always treated as data, not instructions, so the system resists prompt injection such as attempts to spread fake flood warnings.*
 
+**Pengamanan API** ([`api/security.py`](api/security.py), pola sesi 10: *dependency* `Depends(...)`). Dasbor boleh dibuka publik, jadi browser tidak memegang kunci apa pun; yang dijaga adalah yang mahal atau berbahaya:<br>
+*API protection (session 10 pattern). The dashboard may be fully public, so the browser holds no key; protection targets what is costly or dangerous:*
+
+| Lapisan · *Layer* | Berlaku untuk · *Applies to* | Atur di `.env` |
+|---|---|---|
+| Header `X-API-Key` wajib (`401` salah, `503` kalau belum diisi) | `/api/admin/*` | `API_KEY` |
+| Batas request per IP (`429`); `X-API-Key` valid dibebaskan | semua `/api/*` | `API_RATE_PER_MIN` (120) |
+| Batas pertanyaan per IP (`429`) | `/api/chat` | `AGENT_RATE_PER_MIN` (10) |
+| Batas harian global pertanyaan ber-LLM, dihitung dari `agent_logs` (berlaku lintas instance Vercel); lewat batas → mode hemat tanpa LLM | `/api/chat` | `AGENT_DAILY_LIMIT` (300) |
+| Login Basic untuk seluruh situs (opsional, tahap uji); `X-API-Key` valid juga lolos | semua halaman | `BASIC_AUTH_PASSWORD` |
+
+Di Swagger (`/docs`) tombol **Authorize** menerima `X-API-Key`. Batas per IP disimpan di memori proses, jadi di Vercel sifatnya rem kasar per instance.<br>
+*Swagger's **Authorize** button takes the `X-API-Key`. Per-IP limits live in process memory, so on Vercel they are a rough per-instance brake.*
+
 ## 🧰 Tech Stack
 
 <div align="center">
@@ -162,7 +176,7 @@ Batas 10 pertanyaan/menit tetap dihitung per pengguna (nginx membaca `CF-Connect
 | `predict` | ML | Peluang hujan ≥20 mm besok per kota dari `siaganusa-hujan@champion` (MLflow) → `rain_predictions` · *Tomorrow's ≥20 mm rain probability from the champion model* |
 | `rivers` | ETL | Debit sungai GloFAS per kota (riwayat 2010–sekarang + prakiraan 7 hari) · *GloFAS river discharge per city (2010–now + 7-day forecast)* |
 | `views` | SQL | CTE, window function (`DENSE_RANK`, `SUM OVER`), `FILTER`, `CASE WHEN` di [`sql/views.sql`](sql/views.sql) |
-| `knowledge` | RAG | PDF panduan → potongan 200 kata (tumpang tindih 40) → vektor dense `multilingual-e5-small` (384 dim) + sparse BM25, keduanya lokal (FastEmbed, tanpa kuota API) → Qdrant. Pencarian hybrid (RRF): 7/8 relevan di top-3 vs dense 5/8, BM25 6/8. Dijalankan manual · *Hybrid dense + BM25 local embeddings in Qdrant; run manually* |
+| `knowledge` | RAG | PDF panduan → potongan 200 kata (tumpang tindih 40) → vektor dense `multilingual-e5-small` (384 dim) + sparse BM25, keduanya lokal (FastEmbed, tanpa kuota API) → Qdrant. Pencarian hybrid (RRF): 7/8 relevan di top-3 vs dense 5/8, BM25 6/8. Model dense diatur `EMBED_MODEL`/`EMBED_DIM` di `.env` (awalan e5 otomatis); setelah mengganti model, jalankan ulang job ini. Dijalankan manual · *Hybrid dense + BM25 local embeddings in Qdrant; dense model set via `EMBED_MODEL`/`EMBED_DIM`, rerun after changing it; run manually* |
 
 Semua job idempotent (`ON CONFLICT`), dan setiap eksekusi tercatat di `ingest_runs` untuk halaman Status. Scheduler hanya membaca snapshot 2 hari terakhir (`--since-days 2`, ±2 detik per jam), dan `predict` menyimpan salinan model champion di `data/models/` sehingga tetap jalan walau MLflow mati.<br>
 *All jobs are idempotent (`ON CONFLICT`), and every run is logged in `ingest_runs` for the Status page.*
