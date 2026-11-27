@@ -25,5 +25,17 @@ def test_uses_cached_champion_when_mlflow_down(tmp_path, monkeypatch):
 
 def test_no_cache_and_mlflow_down_raises_clear_error(tmp_path, monkeypatch):
     monkeypatch.setattr(mlflow, "MlflowClient", DownClient)
+    monkeypatch.setattr(predict, "settings_repo_models", lambda: tmp_path / "tidak-ada")
     with pytest.raises(RuntimeError, match="belum ada salinan"):
         predict.load_champion(tmp_path)
+
+
+def test_falls_back_to_model_committed_in_repo(tmp_path, monkeypatch):
+    repo_models = tmp_path / "repo-models"
+    (repo_models / predict.MODEL_NAME / "v1").mkdir(parents=True)
+    (repo_models / predict.MODEL_NAME / "champion.json").write_text(json.dumps({"model": predict.MODEL_NAME, "version": "1"}))
+    monkeypatch.setattr(predict, "settings_repo_models", lambda: repo_models)
+    monkeypatch.setattr(mlflow, "MlflowClient", DownClient)
+    monkeypatch.setattr("mlflow.sklearn.load_model", lambda path: f"model@{path}")
+    model, version, from_cache = predict.load_champion(tmp_path / "kosong")
+    assert from_cache and version == "1" and "repo-models" in model

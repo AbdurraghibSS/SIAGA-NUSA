@@ -67,6 +67,26 @@ app = FastAPI(
 )
 
 
+# Basic auth opsional (deploy publik di Vercel; di Docker nginx yang menangani). /health dikecualikan
+# untuk pemantauan. Catatan Vercel: middleware membuat file statis disajikan dari function, bukan CDN.
+if settings.basic_auth_password:
+    import base64
+    import secrets as _secrets
+
+    from fastapi.responses import Response
+
+    _expected = base64.b64encode(f"{settings.basic_auth_user}:{settings.basic_auth_password}".encode()).decode()
+
+    @app.middleware("http")
+    async def _basic_auth(request: Request, call_next):
+        if request.url.path == "/health":
+            return await call_next(request)
+        header = request.headers.get("authorization", "")
+        if header.startswith("Basic ") and _secrets.compare_digest(header[6:].strip(), _expected):
+            return await call_next(request)
+        return Response("Butuh login", status_code=401, headers={"WWW-Authenticate": 'Basic realm="SIAGA NUSA"'})
+
+
 def _window_start() -> datetime:
     return datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
 

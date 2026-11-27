@@ -53,6 +53,12 @@ def live_archive(session, today: date) -> pd.DataFrame:
     return df
 
 
+def settings_repo_models():
+    from pipeline.config import REPO_ROOT
+
+    return REPO_ROOT / "models"
+
+
 def load_champion(cache_root):
     """Model @champion dari MLflow, disalin ke `cache_root/v<versi>` dan dimuat dari salinan itu.
 
@@ -80,7 +86,12 @@ def load_champion(cache_root):
         from_cache = False
     except Exception as exc:
         if not pointer.exists():
-            raise RuntimeError(f"MLflow tidak bisa dihubungi dan belum ada salinan model: {exc}") from exc
+            # Salinan yang di-commit di repo (models/), dipakai GitHub Actions yang tidak menjangkau MLflow.
+            bundled = settings_repo_models() / MODEL_NAME
+            if (bundled / "champion.json").exists():
+                cache_root, pointer = bundled, bundled / "champion.json"
+            else:
+                raise RuntimeError(f"MLflow tidak bisa dihubungi dan belum ada salinan model: {exc}") from exc
         version = json.loads(pointer.read_text(encoding="utf-8"))["version"]
         local = cache_root / f"v{version}"
         from_cache = True

@@ -20,7 +20,19 @@ from pipeline.rivers import RIVER_POINTS
 
 log = logging.getLogger(__name__)
 
-engine = create_engine(settings.database_url, pool_pre_ping=True)
+def make_engine():
+    """Engine untuk Postgres lokal (pool biasa) atau Supabase transaction pooler (serverless/Vercel).
+
+    Transaction pooler (port 6543) membagikan koneksi per transaksi: pool di sisi kita tidak berguna
+    (NullPool) dan prepared statement psycopg harus dimatikan (prepare_threshold=None)."""
+    if settings.db_transaction_pooler:
+        from sqlalchemy.pool import NullPool
+
+        return create_engine(settings.database_url, poolclass=NullPool, connect_args={"prepare_threshold": None})
+    return create_engine(settings.database_url, pool_pre_ping=True)
+
+
+engine = make_engine()
 SQL_DIR = REPO_ROOT / "sql"
 
 

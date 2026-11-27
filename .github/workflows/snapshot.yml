@@ -1,5 +1,5 @@
-# Arsip snapshot prakiraan BMKG + Open-Meteo ke branch `data-snapshots`.
-# Sementara sampai pipeline berjalan di Azure VM; arsip ini nanti di-backfill ke Postgres.
+# Snapshot prakiraan BMKG + Open-Meteo tiap jam: diarsipkan ke branch `data-snapshots` (BMKG tidak
+# punya arsip), lalu dimuat ke Postgres produksi (Supabase) yang dibaca dasbor di Vercel.
 name: Snapshot prakiraan
 
 on:
@@ -20,13 +20,14 @@ concurrency:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - run: pip install .
 
@@ -59,3 +60,12 @@ jobs:
           # Merah hanya kalau semua panggilan gagal; kegagalan sebagian muncul sebagai warning.
           # Snapshot yang berhasil (dan envelope error-nya) tetap tersimpan.
           exit $status
+
+      # Muat 2 hari terakhir snapshot ke Supabase (idempotent; ON CONFLICT DO NOTHING).
+      - name: Muat ke Postgres produksi
+        if: ${{ !cancelled() }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "::notice::Secret DATABASE_URL belum diisi, lewati"; exit 0; fi
+          python -m pipeline.run raw forecasts views --since-days 2

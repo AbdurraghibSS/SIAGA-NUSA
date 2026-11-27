@@ -119,6 +119,34 @@ Mengubah `web/` atau kode backend? Jalankan ulang `docker compose up -d --build`
 Snapshot prakiraan dikumpulkan otomatis oleh GitHub Actions (dijadwalkan tiap jam; kenyataannya ±3 kali sehari karena GitHub sering menunda cron) ([`snapshot.yml`](.github/workflows/snapshot.yml)) ke branch [`data-snapshots`](https://github.com/AbdurraghibSS/SIAGA-NUSA/tree/data-snapshots), karena BMKG tidak menyediakan arsip prakiraan. `pipeline.run sync` mengambil branch itu.<br>
 *Forecast snapshots are collected by GitHub Actions (scheduled hourly; in practice ±3 times a day because GitHub often delays cron) into the `data-snapshots` branch, because BMKG keeps no forecast archive. `pipeline.run sync` pulls that branch.*
 
+### ☁️ Deploy gratis tanpa kartu kredit · *Free deployment, no credit card*
+
+| Bagian | Layanan | Isi |
+|---|---|---|
+| Dasbor + API + agen | **Vercel Hobby** (region `sin1`) | `api.main:app` sebagai satu Vercel Function ([`vercel.json`](vercel.json), `[tool.vercel]` di `pyproject.toml`); `web/` disajikan CDN |
+| PostGIS | **Supabase Free** (Singapore) | Migrasi sekali: [`scripts/migrate_db.py`](scripts/migrate_db.py); Vercel lewat transaction pooler (NullPool, tanpa prepared statement) |
+| RAG | **Qdrant Cloud Free** + Cloud Inference | Embedding `multilingual-e5-small` + `qdrant/bm25` dihitung server Qdrant, jadi API tidak memuat model (hybrid tetap 7/8 di top-3) |
+| Penjadwal | **GitHub Actions** | [`snapshot.yml`](.github/workflows/snapshot.yml) tiap jam, [`alerts.yml`](.github/workflows/alerts.yml) tiap 15 menit, [`daily.yml`](.github/workflows/daily.yml) 05.30 WIB (Model A dari salinan [`models/`](models/)) |
+
+Environment Vercel: `DATABASE_URL` (transaction pooler), `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_CLOUD_INFERENCE=true`, `GEMINI_API_KEY`, dan opsional `BASIC_AUTH_PASSWORD` (login sederhana). Secret GitHub Actions: `DATABASE_URL` (session pooler), `QDRANT_URL`, `QDRANT_API_KEY`. Stack Docker di laptop tetap untuk pengembangan, eksperimen MLflow, dan membangun ulang RAG.
+
+### 🌐 Akses tim dari luar · *Team access via tunnel*
+
+Laptop tidak punya IP publik, jadi dasbor + API dibuka lewat [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) (gratis, tanpa akun). Hanya nginx yang terbuka; DB, Qdrant, dan MLflow tetap lokal.<br>
+*The laptop has no public IP, so the dashboard + API are exposed through a free Cloudflare quick tunnel. Only nginx is reachable.*
+
+```bash
+# 1. Isi BASIC_AUTH_PASSWORD (dan BASIC_AUTH_USER) di .env, lalu muat ulang frontend
+docker compose up -d frontend
+# 2. Buka tunnel dan ambil URL publiknya (berganti setiap tunnel dinyalakan ulang)
+docker compose --profile public up -d tunnel
+docker compose logs tunnel | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com'
+# 3. Tutup akses
+docker compose stop tunnel
+```
+
+Batas 10 pertanyaan/menit tetap dihitung per pengguna (nginx membaca `CF-Connecting-IP`). Laptop harus menyala selama tim mencoba.
+
 ### 🔁 Alur data · *Data flow*
 
 | Job | Pola · *Pattern* | Isi · *What it does* |
@@ -181,7 +209,8 @@ Proyek ini sedang dikembangkan (30 Oktober – 23 Desember 2026).<br>
 - [x] Widget Tanya di dasbor dengan "Lihat langkah agen" · *Ask widget with agent steps*
 - [ ] Laporan situasi otomatis · *Automatic situation report*
 - [x] `docker compose up`: db + backend + frontend · *db + backend + frontend containers*
-- [ ] Deploy Azure VM · *Azure VM deployment*
+- [x] Deploy gratis: Vercel + Supabase + Qdrant Cloud + GitHub Actions · *Free deployment*
+- [ ] Deploy Azure VM (opsional) · *Azure VM deployment (optional)*
 - [ ] Uji keamanan prompt injection · *Prompt injection security testing*
 - [ ] Showcase — 23 Desember 2026
 

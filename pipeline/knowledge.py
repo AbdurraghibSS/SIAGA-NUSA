@@ -13,7 +13,8 @@ Langkah:
 2. Potong per kata lintas halaman: jendela `WINDOW` kata, geser `STEP` kata (tumpang tindih
    `WINDOW − STEP`), supaya kalimat di batas halaman tidak terputus. Setiap potongan
    menyimpan rentang halaman untuk sitasi.
-3. Dua representasi per potongan, keduanya dihitung LOKAL (FastEmbed), tanpa kuota Gemini:
+3. Dua representasi per potongan, tanpa kuota Gemini. Dihitung LOKAL (FastEmbed) atau, kalau
+   QDRANT_CLOUD_INFERENCE=true, oleh server Qdrant Cloud dengan model yang sama (gratis):
    - `dense`: `intfloat/multilingual-e5-small` (384 dimensi), menangkap makna/parafrasa;
    - `bm25`:  vektor sparse kata kunci, IDF dihitung Qdrant. Menangkap istilah persis yang
      sering meleset di dense (leptospirosis, waspada/siaga/awas, tas siaga).
@@ -165,9 +166,29 @@ def _model():
     return _embedder
 
 
-def embed_texts(texts: list[str], task: str = "document") -> list[list[float]]:
-    """Embedding lokal. Model e5 butuh awalan "passage: " untuk dokumen dan "query: " untuk pertanyaan."""
+BM25_MODEL = "qdrant/bm25"
+# BM25 di server Qdrant: stemmer bahasa Inggris dimatikan ("none"). Daftar stopword kustom ditolak
+# server (400), jadi kata umum Indonesia ditangani bobot IDF koleksi.
+BM25_CLOUD_OPTIONS = {"language": "none"}
+
+
+def _cloud() -> bool:
+    from pipeline.config import settings
+
+    return settings.qdrant_cloud_inference
+
+
+def embed_texts(texts: list[str], task: str = "document") -> list:
+    """Vektor dense e5. Model e5 butuh awalan "passage: " untuk dokumen dan "query: " untuk pertanyaan.
+
+    Mode Cloud Inference: kembalikan `Document` (teks + nama model) yang di-embed server Qdrant."""
     prefix = "passage: " if task == "document" else "query: "
+    if _cloud():
+        from qdrant_client import models
+
+        from pipeline.config import settings
+
+        return [models.Document(text=prefix + t, model=settings.embed_model) for t in texts]
     # Batch kecil: puncak memori ONNX naik kuadratik dengan panjang token × batch. Batch 32 pernah
     # membuat proses dimatikan OOM di laptop 14 GB yang menjalankan beberapa stack Docker.
     return [v.tolist() for v in _model().embed([prefix + t for t in texts], batch_size=EMBED_BATCH)]
@@ -192,6 +213,9 @@ def sparse_texts(texts: list[str], task: str = "document"):
     """Vektor BM25 (indices, values). Untuk kueri, bobot tiap kata = 1 (IDF dari Qdrant)."""
     from qdrant_client import models
 
+    if _cloud():
+        return [models.Document(text=t, model=BM25_MODEL, options=BM25_CLOUD_OPTIONS) for t in texts]
+
     m = _bm25()
     embs = m.embed(texts) if task == "document" else m.query_embed(texts)
     return [models.SparseVector(indices=e.indices.tolist(), values=e.values.tolist()) for e in embs]
@@ -202,7 +226,9 @@ def qdrant_client():
 
     from pipeline.config import settings
 
-    return QdrantClient(url=settings.qdrant_url, timeout=5)
+    return QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key,
+                        timeout=30 if settings.qdrant_cloud_inference else 5,
+                        cloud_inference=settings.qdrant_cloud_inference)
 
 
 def build(knowledge_dir: Path) -> dict:
@@ -242,7 +268,9 @@ def build(knowledge_dir: Path) -> dict:
         sparse_vectors_config={"bm25": models.SparseVectorParams(modifier=models.Modifier.IDF)},
     )
     qc.create_payload_index(name, "doc", models.PayloadSchemaType.KEYWORD)
-    qc.upsert(name, points=points, wait=True)
+    # Per batch: di mode cloud, setiap batch juga di-embed server (batas ukuran permintaan).
+    for i in range(0, len(points), 32):
+        qc.upsert(name, points=points[i:i + 32], wait=True)
     summary["chunks"] = len(points)
     return summary
 
@@ -256,29 +284,58 @@ def words(text: str) -> set[str]:
 
 
 def write_doc_freq(texts: list[str], path: Path) -> None:
-    """Frekuensi dokumen tiap kata di seluruh korpus, untuk bobot IDF di mode hemat (tanpa LLM)."""
+    """Frekuensi dokumen tiap kata di seluruh korpus, untuk bobot IDF di mode hemat (tanpa LLM).
+
+    Ditulis ke tabel `knowledge_df` (dibaca API, termasuk di Vercel) dan ke file JSON lokal."""
     import json
     from collections import Counter
+
+    from sqlalchemy import text
+
+    from pipeline import db
 
     df = Counter(w for t in texts for w in words(t))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"n": len(texts), "df": df}, ensure_ascii=False), encoding="utf-8")
+    rows = [{"w": w, "d": d} for w, d in df.items()] + [{"w": N_KEY, "d": len(texts)}]
+    with db.engine.begin() as conn:
+        conn.execute(text("CREATE TABLE IF NOT EXISTS knowledge_df (word TEXT PRIMARY KEY, df INTEGER NOT NULL)"))
+        conn.execute(text("TRUNCATE knowledge_df"))
+        conn.execute(text("INSERT INTO knowledge_df (word, df) VALUES (:w, :d)"), rows)
 
 
+N_KEY = "__n__"  # tidak mungkin bentrok: kata korpus hanya huruf kecil a–z
 _df_cache: dict | None = None
+
+
+def _load_df() -> dict:
+    """Dari tabel knowledge_df; kalau kosong/gagal, dari file lokal; kalau tidak ada, kosong."""
+    import json
+
+    from sqlalchemy import text
+
+    from pipeline.config import settings
+
+    try:
+        from pipeline import db
+
+        with db.engine.connect() as conn:
+            rows = dict(conn.execute(text("SELECT word, df FROM knowledge_df")).all())
+        if rows:
+            return {"n": rows.pop(N_KEY, 0), "df": rows}
+    except Exception:  # tabel belum ada / DB tidak terjangkau: pakai cadangan
+        log.debug("knowledge_df tidak terbaca dari DB", exc_info=True)
+    path = settings.data_dir / DF_FILE
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"n": 0, "df": {}}
 
 
 def idf(word: str) -> float:
     """log((N+1)/(df+1)) dari korpus; kata yang tidak ada di korpus = 0 (tidak membantu memilih)."""
-    import json
     import math
-
-    from pipeline.config import settings
 
     global _df_cache
     if _df_cache is None:
-        path = settings.data_dir / DF_FILE
-        _df_cache = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"n": 0, "df": {}}
+        _df_cache = _load_df()
     df = _df_cache["df"].get(word, 0)
     return math.log((_df_cache["n"] + 1) / (df + 1)) if df else 0.0
 

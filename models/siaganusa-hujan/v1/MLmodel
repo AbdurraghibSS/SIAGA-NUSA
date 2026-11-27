@@ -1,0 +1,56 @@
+artifact_path: mlflow-artifacts:/4/models/m-e2b085080fa8473795bc7f16dfedf1b8/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.skops
+    predict_fn: predict
+    python_version: 3.13.3
+  sklearn:
+    code: null
+    pickled_model: model.skops
+    serialization_format: skops
+    sklearn_version: 1.9.1
+    skops_trusted_types:
+    - numpy.dtype
+    - sklearn.calibration._CalibratedClassifier
+    - sklearn.calibration._SigmoidCalibration
+is_signature_from_type_hint: false
+mlflow_version: 3.18.0
+model_id: m-e2b085080fa8473795bc7f16dfedf1b8
+model_size_bytes: 144887
+model_uuid: m-e2b085080fa8473795bc7f16dfedf1b8
+prompts: null
+run_id: 5d33400242ec44fe9b357081c0369a4f
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "double", "name": "fc_bm_mm", "required": true}, {"type": "double",
+    "name": "fc_ecmwf_mm", "required": true}, {"type": "double", "name": "fc_gfs_mm",
+    "required": true}, {"type": "double", "name": "fc_icon_mm", "required": false},
+    {"type": "double", "name": "fc_mean_mm", "required": true}, {"type": "double",
+    "name": "fc_max_mm", "required": true}, {"type": "double", "name": "fc_spread_mm",
+    "required": true}, {"type": "long", "name": "fc_n_models_ge20", "required": true},
+    {"type": "double", "name": "fc_bm_max_mm_h", "required": true}, {"type": "double",
+    "name": "cape_max", "required": true}, {"type": "double", "name": "rh_mean", "required":
+    true}, {"type": "double", "name": "cloud_mean", "required": true}, {"type": "double",
+    "name": "pressure_mean", "required": true}, {"type": "double", "name": "wind_max",
+    "required": true}, {"type": "double", "name": "rain_1d_mm", "required": true},
+    {"type": "double", "name": "rain_3d_mm", "required": true}, {"type": "double",
+    "name": "rain_7d_mm", "required": true}, {"type": "double", "name": "month_sin",
+    "required": true}, {"type": "double", "name": "month_cos", "required": true},
+    {"type": "long", "name": "city_jakarta", "required": true}, {"type": "long", "name":
+    "city_bogor", "required": true}, {"type": "long", "name": "city_bandung", "required":
+    true}, {"type": "long", "name": "city_semarang", "required": true}, {"type": "long",
+    "name": "city_yogyakarta", "required": true}, {"type": "long", "name": "city_surabaya",
+    "required": true}, {"type": "long", "name": "city_medan", "required": true}, {"type":
+    "long", "name": "city_makassar", "required": true}]'
+  outputs: '[{"type": "tensor", "tensor-spec": {"dtype": "float64", "shape": [-1]}}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-11-23 08:06:28.912630'

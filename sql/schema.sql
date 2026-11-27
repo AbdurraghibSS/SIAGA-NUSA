@@ -14,6 +14,7 @@
 --   quarantine              baris yang ditolak validasi, disimpan untuk diperiksa
 --   ingest_runs             log setiap job pipeline (untuk halaman Status)
 --   agent_logs              log agen Tanya: pertanyaan, tool yang dipanggil, durasi, token
+--   knowledge_df            frekuensi dokumen per kata korpus RAG (bobot IDF mode hemat)
 
 CREATE EXTENSION IF NOT EXISTS postgis;
 
@@ -205,3 +206,10 @@ CREATE TABLE IF NOT EXISTS weather_alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_weather_alerts_expires ON weather_alerts (expires_at DESC);
 CREATE INDEX IF NOT EXISTS idx_weather_alerts_geom ON weather_alerts USING GIST (geom);
+
+-- Frekuensi dokumen tiap kata di korpus panduan (ditulis job knowledge). Baris '__n__' = jumlah potongan.
+-- Disimpan di DB (bukan file) supaya API serverless (Vercel) bisa membacanya.
+CREATE TABLE IF NOT EXISTS knowledge_df (
+    word  TEXT PRIMARY KEY,
+    df    INTEGER NOT NULL
+);

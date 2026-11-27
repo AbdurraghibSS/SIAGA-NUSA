@@ -1,9 +1,21 @@
 # Dasbor statis + reverse proxy ke backend (satu origin, jadi tanpa CORS).
+
+# IP asli pengguna untuk batas pertanyaan agen. Lewat Cloudflare Tunnel semua koneksi datang dari
+# 127.0.0.1, jadi pakai header CF-Connecting-IP. nginx hanya mendengarkan 127.0.0.1, sehingga header
+# ini hanya bisa datang dari cloudflared atau dari laptop sendiri.
+map $http_cf_connecting_ip $client_ip {
+    ""      $remote_addr;
+    default $http_cf_connecting_ip;
+}
+
 server {
     listen 127.0.0.1:${WEB_PORT};
     server_name _;
     root /usr/share/nginx/html;
     index index.html;
+
+    # Basic auth: aktif hanya kalau BASIC_AUTH_PASSWORD diisi (lihat docker/frontend-auth.sh).
+    include /etc/nginx/auth.conf;
 
     gzip on;
     gzip_types text/css application/javascript application/json image/svg+xml;
@@ -14,12 +26,19 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Real-IP $remote_addr;   # batas pertanyaan agen per IP pengguna
+        proxy_set_header X-Real-IP $client_ip;     # batas pertanyaan agen per IP pengguna
         proxy_read_timeout 120s;
     }
     location ~ ^/(health|docs|redoc|openapi\.json)$ {
         proxy_pass http://${API_UPSTREAM};
         proxy_set_header Host $host;
+    }
+
+    # Health check container, tanpa login.
+    location = /healthz {
+        auth_basic off;
+        access_log off;
+        return 200 "ok\n";
     }
 
     # index.html selalu diperiksa ulang supaya perubahan dasbor langsung terlihat.

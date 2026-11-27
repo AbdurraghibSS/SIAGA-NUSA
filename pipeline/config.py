@@ -4,8 +4,10 @@ Pola dari sesi 9 & 11: satu kelas `BaseSettings`, nilai rahasia tidak pernah
 ditulis di kode. Salin `.env.example` menjadi `.env` lalu sesuaikan.
 """
 
+import os
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -30,6 +32,10 @@ class Settings(BaseSettings):
     # Kunci untuk endpoint admin API (mis. menjalankan ulang pipeline). Kosong = endpoint dimatikan.
     api_key: str | None = None
 
+    # Login sederhana untuk deploy publik tanpa nginx (Vercel). Kosong = terbuka.
+    basic_auth_user: str = "tim"
+    basic_auth_password: str | None = None
+
     # Agen Tanya (plan §7): Gemini dengan function calling. Kunci kosong = agen dimatikan
     # (endpoint /api/chat menjawab 503, dasbor tetap jalan).
     gemini_api_key: str | None = None
@@ -46,12 +52,34 @@ class Settings(BaseSettings):
     # RAG: PDF panduan kesiapsiagaan (tidak di-commit, taruh di docs/) → vector DB Qdrant.
     knowledge_dir: Path = REPO_ROOT / "docs"
     qdrant_url: str = "http://127.0.0.1:6333"
+    qdrant_api_key: str | None = None          # Qdrant Cloud; kosong untuk Qdrant lokal
+    # True: embedding dihitung server Qdrant Cloud (Cloud Inference, model sama: e5-small + bm25),
+    # sehingga API tidak perlu memuat model ±470 MB (dipakai di Vercel). False: FastEmbed lokal.
+    qdrant_cloud_inference: bool = False
     qdrant_collection: str = "siaganusa-panduan"
     embed_model: str = "intfloat/multilingual-e5-small"  # lokal, lihat pipeline/knowledge.py
 
     # env_ignore_empty: baris kosong di .env (mis. "GEMINI_MODEL=") tidak menimpa default.
-    model_config = SettingsConfigDict(env_file=REPO_ROOT / ".env", case_sensitive=False, extra="ignore",
+    # SIAGA_ENV_FILE: tes mengarahkannya ke file kosong supaya tidak terpengaruh .env pribadi.
+    model_config = SettingsConfigDict(env_file=os.environ.get("SIAGA_ENV_FILE", REPO_ROOT / ".env"),
+                                      case_sensitive=False, extra="ignore",
                                       env_ignore_empty=True)
+
+    @field_validator("database_url")
+    @classmethod
+    def _psycopg_driver(cls, v: str) -> str:
+        """URL dari Supabase/Neon ('postgresql://' atau 'postgres://') → driver psycopg 3 SQLAlchemy."""
+        for prefix in ("postgresql://", "postgres://"):
+            if v.startswith(prefix):
+                return "postgresql+psycopg://" + v[len(prefix):]
+        return v
+
+    @property
+    def db_transaction_pooler(self) -> bool:
+        """Supabase transaction pooler (port 6543): koneksi pendek, tanpa prepared statement."""
+        from urllib.parse import urlsplit
+
+        return urlsplit(self.database_url).port == 6543
 
     @property
     def snapshot_dir(self) -> Path:
